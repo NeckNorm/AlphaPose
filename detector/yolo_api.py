@@ -23,8 +23,8 @@ from detector.apis import BaseDetector
 #only windows visual studio 2013 ~2017 support compile c/cuda extensions
 #If you force to compile extension on Windows and ensure appropriate visual studio
 #is intalled, you can try to use these ext_modules.
-if platform.system() != 'Windows':
-    from detector.nms import nms_wrapper
+# if platform.system() != 'Windows':
+#     from detector.nms import nms_wrapper
 
 
 class YOLODetector(BaseDetector):
@@ -94,7 +94,7 @@ class YOLODetector(BaseDetector):
             prediction = self.model(imgs, args=args) 
             #do nms to the detection results, only human category is left
             dets = self.dynamic_write_results(prediction, self.confidence, 
-                                              self.num_classes, nms=True, 
+                                              self.num_classes, nms=False, 
                                               nms_conf=self.nms_thres)
             if isinstance(dets, int) or dets.shape[0] == 0:
                 return 0

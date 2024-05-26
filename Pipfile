@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+torch = "*"
+torchvision = "*"
+numpy = "*"
+opencv-python = "*"
+easydict = "*"
+pyyaml = "*"
+matplotlib = "*"
+tqdm = "*"
+pycocotools = "*"
+
+[dev-packages]
+ipykernel = "*"
+
+[requires]
+python_version = "3.9"
+python_full_version = "3.9.6"
