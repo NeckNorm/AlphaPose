@@ -13,6 +13,7 @@ pyyaml = "*"
 matplotlib = "*"
 tqdm = "*"
 pycocotools = "*"
+smplx = "*"
 
 [dev-packages]
 ipykernel = "*"
