@@ -129,7 +129,6 @@ class DetectionLoader():
                     batch_im_names = []
                     batch_im_dim_lists = []
 
-
             except Exception as e:
                 print("An error occurred in image_detection: ", e)
                 continue
@@ -153,58 +152,21 @@ class DetectionLoader():
             scores = dets[:, 5].unsqueeze(1)
             ids = dets[:, 6].unsqueeze(1) if self.opt.tracking else torch.zeros(scores.shape)
 
-            # 가로 400, 세로 200 이하의 바운딩 박스를 제거
-            valid_boxes = []
-            valid_scores = []
-            valid_ids = []
-            valid_indices = []
-
-            for i, box in enumerate(boxes):
-                width = box[2] - box[0]
-                height = box[3] - box[1]
-                if width >= 400 and height >= 200:
-                    valid_boxes.append(box)
-                    valid_scores.append(scores[i])
-                    valid_ids.append(ids[i])
-                    valid_indices.append(dets[i, 0].item())  # 원래 이미지 인덱스 저장
-
-            if valid_boxes:
-                boxes = torch.stack(valid_boxes)
-                scores = torch.stack(valid_scores)
-                ids = torch.stack(valid_ids)
-            else:
-                boxes = torch.empty((0, 4))
-                scores = torch.empty((0, 1))
-                ids = torch.empty((0, 1))
-
             # 검출 결과를 det_queue에 넣음
             for i, (orig_img, im_name) in enumerate(zip(orig_imgs, im_names)):
-                mask = torch.tensor(valid_indices) == i
-                if mask.sum() > 0:
-                    boxes_i = boxes[mask]
-                    scores_i = scores[mask]
-                    ids_i = ids[mask] if self.opt.tracking else None
-                else:
-                    boxes_i = torch.empty((0, 4))
-                    scores_i = torch.empty((0, 1))
-                    ids_i = torch.empty((0, 1)) if self.opt.tracking else None
-
-
-                # 유효한 박스가 없으면 다음 단계로 None을 전달
-                if boxes_i.shape[0] == 0:
-                    # self.wait_and_put(self.det_queue, (orig_img, im_name, None, None, None, None, None))
+                # 유효한 박스가 없으면 continue
+                if boxes.shape[0] == 0:
                     continue
 
                 # 포즈 추정 입력 데이터 준비
-                inps = torch.zeros(boxes_i.size(0), 3, *self._input_size)
-                cropped_boxes = torch.zeros(boxes_i.size(0), 4)
+                inps = torch.zeros(boxes.size(0), 3, *self._input_size)
+                cropped_boxes = torch.zeros(boxes.size(0), 4)
 
-                for j, box in enumerate(boxes_i):
+                for j, box in enumerate(boxes):
                     inps[j], cropped_box = self.transformation.test_transform(orig_img, box)
                     cropped_boxes[j] = torch.FloatTensor(cropped_box)
 
-                self.wait_and_put(self.det_queue, (orig_img, im_name, boxes_i, scores_i, ids_i, inps, cropped_boxes))
-
+                self.wait_and_put(self.det_queue, (orig_img, im_name, boxes, scores, ids, inps, cropped_boxes))
 
     def image_postprocess(self):
         while True:
@@ -229,7 +191,6 @@ class DetectionLoader():
 
                 # 준비된 데이터를 포즈 큐에 저장
                 self.wait_and_put(self.pose_queue, (inps, orig_img, im_name, boxes, scores, ids, cropped_boxes))
-            
             except Exception as e:
                 print("Error in image_postprocess:", e)
                 continue  # 예외 발생 시 계속 진행
