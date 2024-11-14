@@ -17,6 +17,8 @@ def get_img_from_fig(fig, dpi=120):
     return img
 
 def get_pose3d_result(
+    fig,
+    scores,
     pose3d_outp_single,
     elevation=12.,
     angle=80
@@ -34,7 +36,6 @@ def get_pose3d_result(
     color_right = "#2F70AF"
 
     j3d = motion_world[:,:,0]
-    fig = plt.figure(0, figsize=(10, 10))
     ax = plt.axes(projection="3d")
     ax.set_xlim(-512, 0)
     ax.set_ylim(-256, 256)
@@ -44,8 +45,8 @@ def get_pose3d_result(
     plt.tick_params(left = False, right = False , labelleft = False ,
                     labelbottom = False, bottom = False)
     for i in range(len(joint_pairs)):
-        # if i not in [8,9,10,11,14]:
-        #     continue
+        if scores[i] < 0.7:
+            continue
         limb = joint_pairs[i]
         xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
         if joint_pairs[i] in joint_pairs_left:
@@ -55,7 +56,9 @@ def get_pose3d_result(
         else:
             ax.plot(-xs, -zs, -ys, color=color_mid, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
     
-    # result = get_img_from_fig(fig)
+    result = get_img_from_fig(fig)
+    fig.clear()
+    return result
     # plt.close()
 
     # return fig

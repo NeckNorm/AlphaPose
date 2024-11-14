@@ -132,9 +132,13 @@ class DetectionOpt:
         self.gpus = [-1]
         self.min_box_area = 0
         self.vis_fast = False
+        self.config_path = ""
+        self.weights_path = ""
 
 def get_detection_model(device, pose2d_model_config):
     detection_options = DetectionOpt(device)
+    detection_options.config_path = pose2d_model_config.DETECTOR.CONFIG
+    detection_options.weights_path = pose2d_model_config.DETECTOR.WEIGHTS
 
     detection_model = DetectionLoader(
         get_detector(detection_options), 

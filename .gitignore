@@ -122,6 +122,7 @@ data
 
 # MacOS stuff
 .DS_Store
+*.mp4
 
 # MotionBERT
 MotionBERT

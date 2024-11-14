@@ -1,0 +1,12 @@
+torch 
+torchvision 
+numpy 
+opencv-python 
+easydict 
+pyyaml 
+matplotlib 
+tqdm 
+pycocotools 
+smplx
+imageio-ffmpeg
+flask-socketio 

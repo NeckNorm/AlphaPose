@@ -11,6 +11,9 @@ def get_detector(opt=None):
     if opt.detector == 'yolo':
         from detector.yolo_api import YOLODetector
         from detector.yolo_cfg import cfg
+        cfg.CONFIG = opt.config_path
+        cfg.WEIGHTS = opt.weights_path
+        
         return YOLODetector(cfg, opt)
     elif 'yolox' in opt.detector:
         from detector.yolox_api import YOLOXDetector

@@ -80,9 +80,8 @@ def pose3d_visualize(ax, motion, scores,elivation, angle, keypoints_threshold=0.
             ax.plot(-xs, -zs, -ys, color=color_mid, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
 
 # GLBAL VARIABLES
-pose2d_model, detection_model, pose3d_model, pose2d_estimator = load_models()
-
-wp = jp.WebPage(delete_flag=False)
+# pose2d_model, detection_model, pose3d_model, pose2d_estimator = load_models()
+run_webcam = False
 
 def img2pose2d_input(img):
     img_h, img_w = img.shape[:2]
@@ -134,7 +133,8 @@ def pose2d_to_pose3d(pose2d_outs, img_wh):
 
         return pose3d_outp, keypoints_scores
 
-async def update_webcam(webcam_img, pose3d_figures):
+async def update_webcam(webpage, webcam_img, pose3d_figures):
+    global run_webcam
     # 웹캠 열기
     cam = cv2.VideoCapture(0)
     if not cam.isOpened():
@@ -143,7 +143,7 @@ async def update_webcam(webcam_img, pose3d_figures):
     
     pose2d_outs = []
 
-    while True:
+    while run_webcam:
         ret, frame = cam.read()
 
         if not ret:
@@ -156,7 +156,7 @@ async def update_webcam(webcam_img, pose3d_figures):
 
         pose2d_outs.append(pose2d_out)
 
-        if len(pose2d_outs) > 10:
+        if len(pose2d_outs) > 3:
             pose2d_outs = pose2d_outs[1:]
         
         # =================== Pose 2D --> Pose 3D ===================
@@ -169,11 +169,15 @@ async def update_webcam(webcam_img, pose3d_figures):
         # =================== 3D visualize ===================
         f = plt.figure(figsize=(10, 5))
         
-        ax = f.add_subplot(121, projection='3d')
+        ax = f.add_subplot(131, projection='3d')
         pose3d_visualize(ax, motion_world, keypoints_scores, 80, 0)
         plt.title("TOP VIEW")
 
-        ax = f.add_subplot(122, projection='3d')
+        ax = f.add_subplot(132, projection='3d')
+        pose3d_visualize(ax, motion_world, keypoints_scores, 40, -90)
+        plt.title("FRONT VIEW")
+
+        ax = f.add_subplot(133, projection='3d')
         pose3d_visualize(ax, motion_world, keypoints_scores, 0, 0)
         plt.title("LEFT SIDE VIEW")
 
@@ -190,25 +194,95 @@ async def update_webcam(webcam_img, pose3d_figures):
         webcam_img.src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
         
         # 페이지에 변경 사항 적용
-        jp.run_task(wp.update())
+        jp.run_task(webpage.update())
         
         # 0.1초 대기 후 다음 프레임
         await asyncio.sleep(0.01)
 
     cam.release()
+    pose2d_outs = []
+
     print("웹캠이 닫혔습니다.")
 
-async def main():
-    # 웹캠 이미지 표시할 컨테이너 설정
-    webcam_container = jp.Div(a=wp, classes="h-screen w-screen flex flex-col justify-center items-center bg-white")
+def toggle_webcam(self, msg):
+    global run_webcam
+    if run_webcam:
+        run_webcam = False
+        self.text = "시작하기"
+    else:
+        run_webcam = True
+        jp.run_task(update_webcam(self.a.a, self.webcam_img, self.pose3d_figures))
+        self.text = "멈추기"
 
-    pose3d_figures = jp.Matplotlib(a=webcam_container)
+def result_view(container):
+    # 웹캠 이미지 표시할 컨테이너 설정
+    webcam_container = jp.Div(a=container, id="webcam_container" ,classes="py-10 flex flex-col border-box justify-center items-center bg-white")
 
     # 이미지 표시 영역 생성
-    webcam_img = jp.Img(a=webcam_container, classes="border", width="640", height="480")
+    jp.Img(a=webcam_container, id="webcam_img", classes="border", width="640", height="480")
 
-    # 페이지 로드 시 웹캠 업데이트 시작
-    jp.run_task(update_webcam(webcam_img, pose3d_figures))
+    # 3D 결과 ploting
+    jp.Matplotlib(a=webcam_container, id="pose3d_figures")
+
+def setting_view(container):
+    # =================== 웹캠 정보 가져오기 ===================
+    cam = cv2.VideoCapture(0)
+    width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cam.get(cv2.CAP_PROP_FPS)
+    cam.release()
+
+    # =================== 설정 ===================
+    setting_container = jp.Div(a=container, id="setting_container", classes="h-full flex flex-col border-box bg-red-50")
+
+    setting_controller = jp.Div(a=setting_container, id="setting_controller", classes="flex flex-col items-end bg-gray-300 p-5 rounded-lg")
+    jp.Span(a=setting_controller, text="데이터 생성 설정", classes="text-lg self-start font-bold mb-3")
+
+    # =================== 생성 시간 ===================
+    def time_control(self, msg):
+        time_value = float(self.value)
+        self.a.a.components[2].components[-1].value = time_value * fps  if fps > 0 else "fps가 0입니다"
+    
+    setting_control_time = jp.Div(a=setting_controller, id="setting_control_time", classes="flex justify-around items-center")
+    jp.Span(a=setting_control_time, text="생성 길이(초)", classes="text-base")
+    jp.Input(a=setting_control_time, id="setting_control_time_input", placeholder="초 단위로 입력", classes="m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500")
+    setting_control_time.components[-1].on("input", time_control)
+
+    # =================== 생성 프레임 ===================
+    def frame_control(self, msg):
+        frame_value = float(self.value)
+        self.a.a.components[1].components[-1].value = frame_value / fps if fps > 0 else "fps가 0입니다"
+
+    setting_control_frame = jp.Div(a=setting_controller, id="setting_control_frame", classes="flex justify-around items-center")
+    jp.Span(a=setting_control_frame, text="생성 프레임 개수", classes="text-base")
+    jp.Input(a=setting_control_frame, id="setting_control_frame_input", placeholder="프레임 개수를 입력", classes="m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500")
+    setting_control_frame.components[-1].on("input", frame_control)
+    
+    # =================== 3D pose 배치 크기 ===================
+    setting_control_batch = jp.Div(a=setting_controller, id="setting_control_batch", classes="flex justify-around items-center")
+    jp.Span(a=setting_control_batch, text="3D pose 배치 크기", classes="text-base")
+    jp.Input(a=setting_control_batch, id="setting_control_batch_input", placeholder="배치 크기 입력", classes="m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500")
+    
+    # =================== 웹캠 정보 ===================
+    current_webcam_info_container = jp.Div(a=setting_controller, id="current_webcam_info_container", classes="w-full flex justify-around items-center my-2")
+    jp.Span(a=current_webcam_info_container, text=f"웹캠 fps : {fps}", classes="text-sm text-purple-500 font-bold")
+    jp.Span(a=current_webcam_info_container, text=f"이미지 크기 : {width} x {height}", classes="text-sm text-purple-500 font-bold")
+
+    # =================== 저장 버튼 ===================
+    save_button_container = jp.Div(a=setting_controller, id="save_button_container", classes="flex justify-center w-full")
+    jp.Button(a=save_button_container, id="setting_save_btn", text="저장하기", classes="w-32 m-2 bg-green-400 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg")
+
+def main():
+    wp = jp.WebPage()
+
+    plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex border-box justify-center bg-indigo-500")
+    
+    result_view(plane)
+    setting_view(plane)
+
+    # toggle_btn = jp.Button(a=webcam_container, click=toggle_webcam, text="시작하기")
+    # toggle_btn.pose3d_figures = pose3d_figures
+    # toggle_btn.webcam_img = webcam_img
 
     return wp
 
