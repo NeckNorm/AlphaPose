@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 
 import base64
 import asyncio
+from hashlib import md5
+import time
+from datetime import datetime
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -140,6 +143,9 @@ async def update_webcam(webpage, webcam_img, pose3d_figures):
         print("웹캠을 열 수 없습니다.")
         return
     
+    cam_fps = cam.get(cv2.CAP_PROP_FPS)
+    current_fps = cam_fps
+
     pose2d_outs = []
 
     while webpage.is_webcam_on:
@@ -155,7 +161,8 @@ async def update_webcam(webpage, webcam_img, pose3d_figures):
 
         pose2d_outs.append(pose2d_out)
 
-        if len(pose2d_outs) > 3:
+        pose3d_batch = webpage.collected_data[-1]["batch_size"] if webpage.is_collection_on else 3
+        if len(pose2d_outs) > pose3d_batch:
             pose2d_outs = pose2d_outs[1:]
         
         # =================== Pose 2D --> Pose 3D ===================
@@ -185,18 +192,36 @@ async def update_webcam(webpage, webcam_img, pose3d_figures):
 
         pose3d_figures.update()
 
-
         # =================== Screen Update ===================
         _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
-        jpg_as_text = base64.b64encode(jpeg).decode('utf-8')
+        img_jpeg = base64.b64encode(jpeg)
+        jpg_as_text = img_jpeg.decode('utf-8')
 
         webcam_img.src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
         
         # 페이지에 변경 사항 적용
         jp.run_task(webpage.update())
+
+        # =================== Data Collection ===================
+        if webpage.is_collection_on:
+            collected_data = {
+                "index": len(webpage.collected_data[-1]["datas"]),
+                "img_jpeg": img_jpeg,
+                "pose3d_output": motion_world,
+                "keypoints_scores": keypoints_scores
+            }
+            webpage.collected_data[-1]["datas"].append(collected_data)
+            
+            progress_percentage = len(webpage.collected_data[-1]["datas"]) / webpage.collected_data[-1]["frame_count"]
+            webpage.update_progress_bar(progress_percentage)
+
+            if progress_percentage == 1:
+                webpage.add_collected_item(webpage.collected_data[-1])
+                webpage.collecting_off()
         
-        # 0.1초 대기 후 다음 프레임
-        await asyncio.sleep(0.01)
+        # N초 대기
+        current_fps = webpage.collected_data[-1]["fps"] if webpage.is_collection_on else current_fps
+        await asyncio.sleep(1/current_fps)
 
     cam.release()
     pose2d_outs = []
@@ -213,6 +238,18 @@ def result_view(container):
     # 3D 결과 ploting
     jp.Matplotlib(a=webcam_container, id="pose3d_figures", classes="w-full max-h-80")
 
+def progress_bar_view(container):
+    progress_bar_container = jp.Div(a=container, id="progress_bar_container", classes="relative w-full h-6 flex justify-center items-center bg-white border-2 border-black mt-10 z-0")
+    progress_bar = jp.Div(a=progress_bar_container, id="progress_bar", classes="absolute left-0 h-5 bg-yellow-300 z-0")
+    progress_text = jp.Span(a=progress_bar_container, text="0%", id="progress_text", classes="z-20")
+
+    def update(percentage):
+        percentage = percentage * 100
+        progress_bar.style = f"width: {percentage}%"
+        progress_text.text = str(percentage) + "%"
+    
+    container.a.a.update_progress_bar = update
+
 def setting_view(container):
     # =================== 설정 ===================
     setting_container = jp.Div(a=container, id="setting_container", classes="h-full flex flex-col border-box mx-5")
@@ -223,17 +260,20 @@ def setting_view(container):
 
     # =================== 웹캠 정보 가져오기 ===================
     cam = cv2.VideoCapture(0)
-    setting_controller.width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
-    setting_controller.height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    setting_controller.cam_fps = cam.get(cv2.CAP_PROP_FPS)
-    setting_controller.user_fps = setting_controller.cam_fps
+    setting_container.width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
+    setting_container.height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    setting_container.cam_fps = cam.get(cv2.CAP_PROP_FPS)
+    setting_container.user_fps = setting_container.cam_fps
     cam.release()
 
     # =================== 생성 시간 ===================
     def time_control(self, msg):
         time_value = float(self.value)
-        user_fps = self.a.a.user_fps
+        user_fps = self.a.a.a.user_fps
         self.a.a.components[2].components[-1].value = time_value * user_fps  if user_fps > 0 else 0
+
+        self.a.a.a.time_length = time_value
+        self.a.a.a.frame_count = self.a.a.components[2].components[-1].value
     
     setting_control_time = jp.Div(a=setting_controller, id="setting_control_time", classes="flex justify-around items-center")
     jp.Span(a=setting_control_time, text="생성 길이(초)", classes="text-base")
@@ -243,8 +283,11 @@ def setting_view(container):
     # =================== 생성 프레임 ===================
     def frame_control(self, msg):
         frame_value = float(self.value)
-        user_fps = self.a.a.user_fps
+        user_fps = self.a.a.a.user_fps
         self.a.a.components[1].components[-1].value = frame_value / user_fps if user_fps > 0 else 0
+
+        self.a.a.a.frame_count = frame_value
+        self.a.a.a.time_length = self.a.a.components[1].components[-1].value
 
     setting_control_frame = jp.Div(a=setting_controller, id="setting_control_frame", classes="flex justify-around items-center")
     jp.Span(a=setting_control_frame, text="생성 프레임 개수", classes="text-base")
@@ -256,7 +299,7 @@ def setting_view(container):
         batch_value = int(self.value)
         batch_value = batch_value if batch_value > 0 else 1
 
-        self.a.a.batch = batch_value
+        self.a.a.a.batch = batch_value
 
     setting_control_batch = jp.Div(a=setting_controller, id="setting_control_batch", classes="flex justify-around items-center")
     jp.Span(a=setting_control_batch, text="3D pose 배치 크기", classes="text-base")
@@ -275,31 +318,31 @@ def setting_view(container):
         self.a.a.components[1].components[-1].value = user_frame / user_fps
 
         # 값 업데이트
-        self.a.a.user_fps = user_fps
-
+        self.a.a.a.time_length = self.a.a.components[1].components[-1].value
+        self.a.a.a.user_fps = user_fps
 
     setting_control_capture_interval = jp.Div(a=setting_controller, id="setting_control_capture_interval", classes="flex justify-around items-center")
     jp.Span(a=setting_control_capture_interval, text="화면 캡처 주기(fps)", classes="text-base")
     jp.Input(a=setting_control_capture_interval, id="setting_control_capture_interval_input", placeholder="fps 입력", classes="m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500")
     setting_control_capture_interval.components[-1].on("input", capture_interval_control)
-    setting_control_capture_interval.components[-1].value = setting_controller.cam_fps
+    setting_control_capture_interval.components[-1].value = setting_container.cam_fps
 
     # =================== 웹캠 정보 ===================
     current_webcam_info_container = jp.Div(a=setting_controller, id="current_webcam_info_container", classes="w-full flex justify-around items-center my-2")
-    jp.Span(a=current_webcam_info_container, text=f"웹캠 fps : {setting_controller.cam_fps}", classes="text-sm text-purple-500 font-bold")
-    jp.Span(a=current_webcam_info_container, text=f"이미지 크기 : {setting_controller.width} x {setting_controller.height}", classes="text-sm text-purple-500 font-bold")
+    jp.Span(a=current_webcam_info_container, text=f"웹캠 fps : {setting_container.cam_fps}", classes="text-sm text-purple-500 font-bold")
+    jp.Span(a=current_webcam_info_container, text=f"이미지 크기 : {setting_container.width} x {setting_container.height}", classes="text-sm text-purple-500 font-bold")
 
-    # =================== 저장 버튼 ===================
-    save_button_container = jp.Div(a=setting_controller, id="save_button_container", classes="flex justify-center w-full")
-    jp.Button(a=save_button_container, id="setting_save_btn", text="저장하기", classes="w-32 m-2 bg-green-400 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg")
+    # =================== Progress Bar ===================
+    progress_bar_view(setting_container)
 
     # =================== 웹캠 및 수집 버튼 ===================
     def webcam_control(self, msg):
-        if container.a.is_webcam_on:
+        def webcam_off():
             container.a.is_webcam_on = False
             self.set_class('bg-red-600')
             self.text = "웹캠 키기"
-        else:
+
+        def webcam_on():
             container.a.is_webcam_on = True
             self.text = "웹캠 끄기"
             self.set_class('bg-purple-400')
@@ -309,30 +352,116 @@ def setting_view(container):
             pose3d_figures = container.components[0].components[1]
             jp.run_task(update_webcam(webpage, webcam_img, pose3d_figures))
 
+        if msg is None:
+            container.a.webcam_off = webcam_off
+            container.a.webcam_on = webcam_on
+        else:
+            if container.a.is_webcam_on:
+                webcam_off()
+            else:
+                webcam_on()
+
+    def collection_control(self, msg):
+        def collecting_off():
+            container.a.update_progress_bar(0)
+
+            container.a.is_collection_on = False
+            self.set_class('bg-yellow-600')
+            self.text = "데이터 수집하기"
+        
+        def collecting_on():
+            if not(container.a.is_webcam_on):
+                container.a.webcam_on()
+
+            container.a.update_progress_bar(0)
+
+            self.text = "수집 종료하기"
+            self.set_class('bg-pink-600')
+            
+            collection_box = {
+                "date": datetime.now().strftime("%Y-%m-%d(%H:%M:%S)"),
+                "hash": md5(str(time.time()).encode("utf-8")).hexdigest(),
+                "img_width": self.a.a.width,
+                "img_height": self.a.a.height,
+                "frame_count": self.a.a.frame_count,
+                "batch_size": self.a.a.batch,
+                "fps": self.a.a.user_fps,
+                "time_length": self.a.a.time_length,
+                "datas": []
+            }
+
+            container.a.collected_data.append(collection_box)
+
+            container.a.is_collection_on = True
+
+        if msg is None:
+            container.a.collecting_off = collecting_off
+            container.a.collecting_on = collecting_on
+        else:
+            if container.a.is_collection_on:
+                collecting_off()
+            else:
+                collecting_on()
 
     core_button_container = jp.Div(a=setting_container, id="core_button_container", classes="flex justify-center mt-5")
     container.a.is_webcam_on = False
+    container.a.is_collection_on = False
+
     jp.Button(a=core_button_container, id="webcam_control_btn", text="웹캠 키기", classes="w-32 m-2 bg-red-600 hover:bg-red-100 hover:text-black text-white font-bold py-3 px-4 rounded-lg")
     jp.Button(a=core_button_container, id="data_collection_control_btn", text="데이터 수집하기", classes="w-35 m-2 bg-yellow-600 hover:bg-red-100 hover:text-black text-white font-bold py-3 px-4 rounded-lg")
+
+    # 초기화
+    webcam_control(core_button_container.components[0], None)
+    collection_control(core_button_container.components[1], None)
+
     core_button_container.components[0].on("click", webcam_control)
+    core_button_container.components[1].on("click", collection_control)
+
+def download_item(container, collected_datas):
+    """
+    collection_box = {
+        "date": datetime.now().strftime("%Y-%m-%d(%H:%M)"),
+        "hash": md5(str(time.time()).encode("utf-8")).hexdigest(),
+        "img_width": self.a.a.width,
+        "img_height": self.a.a.height,
+        "frame_count": self.a.a.frame_count,
+        "batch_size": self.a.a.batch,
+        "fps": self.a.a.user_fps,
+        "time_length": self.a.a.time_length,
+        "datas": []
+    }
+    """
+    item_container = jp.Div(a=container, classes="h-15 flex p-3 items-center bg-green-100 mb-3")
+    date = collected_datas["date"]
+    frame_count = int(collected_datas["frame_count"])
+    batch_size = collected_datas["batch_size"]
+    item_name = f"{date}_fc{frame_count}_bs{batch_size}"
+    jp.Span(a=item_container, text=item_name, classes="text-base")
+    jp.Button(a=item_container, text="💾", classes="text-2xl mx-5")
+    jp.Button(a=item_container, text="🗑️", classes="text-2xl")
+
 
 def download_view(container):
     download_container = jp.Div(a=container, id="download_container", classes="h-full flex flex-col items-center border-box bg-white border border-green-400 p-5")
     jp.Span(a=download_container, text="저장된 데이터 목록", classes="text-lg font-bold mb-1")
-    jp.Span(a=download_container, text="(클릭 시, 다운로드)", classes="text-base mb-3")
+
+    download_list_container = jp.Div(a=download_container, id="download_list_container", classes="h-full flex flex-col")
+
+    def add_collected_item(collected_datas):
+        download_item(download_list_container, collected_datas)
+    
+    container.a.add_collected_item = add_collected_item
+
 
 def main():
     wp = jp.WebPage()
+    wp.collected_data = []
 
     plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex border-box justify-center bg-indigo-500 py-3")
     
     result_view(plane)
     setting_view(plane)
     download_view(plane)
-
-    # toggle_btn = jp.Button(a=webcam_container, click=toggle_webcam, text="시작하기")
-    # toggle_btn.pose3d_figures = pose3d_figures
-    # toggle_btn.webcam_img = webcam_img
 
     return wp
 
