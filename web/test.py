@@ -10,6 +10,7 @@ import asyncio
 from hashlib import md5
 import time
 from datetime import datetime
+import json
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -206,9 +207,9 @@ async def update_webcam(webpage, webcam_img, pose3d_figures):
         if webpage.is_collection_on:
             collected_data = {
                 "index": len(webpage.collected_data[-1]["datas"]),
-                "img_jpeg": img_jpeg,
-                "pose3d_output": motion_world,
-                "keypoints_scores": keypoints_scores
+                "img_jpeg": jpg_as_text,
+                "pose3d_output": motion_world.cpu().numpy().tolist(),
+                "keypoints_scores": keypoints_scores.tolist()
             }
             webpage.collected_data[-1]["datas"].append(collected_data)
             
@@ -430,15 +431,36 @@ def download_item(container, collected_datas):
         "time_length": self.a.a.time_length,
         "datas": []
     }
+
+    collected_data = {
+        "index": len(webpage.collected_data[-1]["datas"]),
+        "img_jpeg": img_jpeg,
+        "pose3d_output": motion_world,
+        "keypoints_scores": keypoints_scores
+    }
     """
     item_container = jp.Div(a=container, classes="h-15 flex p-3 items-center bg-green-100 mb-3")
     date = collected_datas["date"]
     frame_count = int(collected_datas["frame_count"])
     batch_size = collected_datas["batch_size"]
     item_name = f"{date}_fc{frame_count}_bs{batch_size}"
-    jp.Span(a=item_container, text=item_name, classes="text-base")
-    jp.Button(a=item_container, text="💾", classes="text-2xl mx-5")
-    jp.Button(a=item_container, text="🗑️", classes="text-2xl")
+    jp.Span(a=item_container, text=item_name, classes="text-base mr-5")
+    download_btn = jp.A(a=item_container, text="💾", classes="text-2xl cursor-pointer")
+
+    hash = collected_datas["hash"]
+    
+    selected_data = None
+    for data in container.a.a.a.collected_data:
+        if data["hash"] == hash:
+            selected_data = data
+            break
+    
+    json_file = item_name + ".json"
+    with open(json_file, "w") as f:
+        json.dump(selected_data, f)
+    
+    download_btn.href=f"/static/{json_file}"
+    download_btn.download=json_file
 
 
 def download_view(container):
