@@ -264,6 +264,7 @@ def setting_view(container):
     setting_container.height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
     setting_container.cam_fps = cam.get(cv2.CAP_PROP_FPS)
     setting_container.user_fps = setting_container.cam_fps
+    setting_container.batch = 3
     cam.release()
 
     # =================== 생성 시간 ===================
@@ -326,6 +327,7 @@ def setting_view(container):
     jp.Input(a=setting_control_capture_interval, id="setting_control_capture_interval_input", placeholder="fps 입력", classes="m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500")
     setting_control_capture_interval.components[-1].on("input", capture_interval_control)
     setting_control_capture_interval.components[-1].value = setting_container.cam_fps
+    setting_control_capture_interval.components[-2].value = 3
 
     # =================== 웹캠 정보 ===================
     current_webcam_info_container = jp.Div(a=setting_controller, id="current_webcam_info_container", classes="w-full flex justify-around items-center my-2")
