@@ -123,6 +123,7 @@ data
 # MacOS stuff
 .DS_Store
 *.mp4
+*.json
 
 # MotionBERT
 MotionBERT

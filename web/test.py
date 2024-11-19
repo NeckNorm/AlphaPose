@@ -19,7 +19,6 @@ import sys
 sys.path.append("../")
 
 from custom_model_utils import DataWriter, get_pose2d_model, get_detection_model, get_pose3d_model, DetectionOpt
-from custom_model_utils import get_pose2d_result, get_pose3d_result
 from MotionBERT.lib.data.dataset_wild import WildDetDataset
 from MotionBERT.lib.utils.vismo import pixel2world_vis_motion
 
@@ -462,7 +461,6 @@ def download_item(container, collected_datas):
     download_btn.href=f"/static/{json_file}"
     download_btn.download=json_file
 
-
 def download_view(container):
     download_container = jp.Div(a=container, id="download_container", classes="h-full flex flex-col items-center border-box bg-white border border-green-400 p-5")
     jp.Span(a=download_container, text="저장된 데이터 목록", classes="text-lg font-bold mb-1")
@@ -475,11 +473,12 @@ def download_view(container):
     container.a.add_collected_item = add_collected_item
 
 
-def main():
+@jp.SetRoute("/collection")
+def data_collection_page():
     wp = jp.WebPage()
     wp.collected_data = []
 
-    plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex border-box justify-center bg-indigo-500 py-3")
+    plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex border-box justify-center py-3")
     
     result_view(plane)
     setting_view(plane)
@@ -487,5 +486,97 @@ def main():
 
     return wp
 
+async def update_result(webpage, webcam_img, pose3d_figures):
+    # 웹캠 열기
+    cam = cv2.VideoCapture(0)
+    if not cam.isOpened():
+        print("웹캠을 열 수 없습니다.")
+        return
+    
+    cam_fps = cam.get(cv2.CAP_PROP_FPS)
+    current_fps = cam_fps
+
+    pose2d_outs = []
+
+    while webpage.is_webcam_on:
+        ret, frame = cam.read()
+
+        if not ret:
+            print("프레임을 가져올 수 없습니다.")
+            break
+        
+        # =================== Image --> Pose 2D ===================
+        pose2d_input = img2pose2d_input(frame)
+        pose2d_out = det2pose2d(pose2d_input)
+
+        pose2d_outs.append(pose2d_out)
+
+        pose3d_batch = webpage.collected_data[-1]["batch_size"] if webpage.is_collection_on else 3
+        if len(pose2d_outs) > pose3d_batch:
+            pose2d_outs = pose2d_outs[1:]
+        
+        # =================== Pose 2D --> Pose 3D ===================
+        img_wh = pose2d_input[1].shape[:2][::-1]
+        pose3d_out, keypoints_scores = pose2d_to_pose3d(pose2d_outs, img_wh)
+
+        motion = np.transpose(pose3d_out, (1,2,0))
+        motion_world = pixel2world_vis_motion(motion, dim=3)
+
+        # =================== 3D visualize ===================
+        f = plt.figure(figsize=(9, 4))
+        
+        ax = f.add_subplot(131, projection='3d')
+        pose3d_visualize(ax, motion_world, keypoints_scores, 80, 0)
+        plt.title("TOP VIEW")
+
+        ax = f.add_subplot(132, projection='3d')
+        pose3d_visualize(ax, motion_world, keypoints_scores, 40, -90)
+        plt.title("FRONT VIEW")
+
+        ax = f.add_subplot(133, projection='3d')
+        pose3d_visualize(ax, motion_world, keypoints_scores, 0, 0)
+        plt.title("LEFT SIDE VIEW")
+
+        pose3d_figures.set_figure(f)
+        plt.close(f)
+
+        pose3d_figures.update()
+
+        # =================== Screen Update ===================
+        _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
+        img_jpeg = base64.b64encode(jpeg)
+        jpg_as_text = img_jpeg.decode('utf-8')
+
+        webcam_img.src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
+        
+        # 페이지에 변경 사항 적용
+        jp.run_task(webpage.update())
+
+        # =================== Data Collection ===================
+        if webpage.is_collection_on:
+            collected_data = {
+                "index": len(webpage.collected_data[-1]["datas"]),
+                "img_jpeg": jpg_as_text,
+                "pose3d_output": motion_world.cpu().numpy().tolist(),
+                "keypoints_scores": keypoints_scores.tolist()
+            }
+            webpage.collected_data[-1]["datas"].append(collected_data)
+            
+            progress_percentage = len(webpage.collected_data[-1]["datas"]) / webpage.collected_data[-1]["frame_count"]
+            webpage.update_progress_bar(progress_percentage)
+
+            if progress_percentage == 1:
+                webpage.add_collected_item(webpage.collected_data[-1])
+                webpage.collecting_off()
+        
+        # N초 대기
+        current_fps = webpage.collected_data[-1]["fps"] if webpage.is_collection_on else current_fps
+        await asyncio.sleep(1/current_fps)
+
+    cam.release()
+    pose2d_outs = []
+
+    print("웹캠이 닫혔습니다.")
+
 if __name__ == "__main__":
-    jp.justpy(main)
+    jp.justpy()
