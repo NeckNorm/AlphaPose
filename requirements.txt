@@ -8,3 +8,4 @@ PyYAML==6.0.2
 easydict==1.13
 tqdm==4.67.0
 pycocotools==2.0.8
+imageio==2.36.0
