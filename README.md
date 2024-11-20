@@ -26,15 +26,15 @@ cd .. # 다시 AlphaPose 디렉토리로 이동
 
 모든 경로는 `AlphaPose 디렉토리(clone 받은 디렉토리)` 기준
 
-1. [YOLOv3]("https://drive.google.com/file/d/1D47msNOOiJKvPOXlnpyzdKA3k6E97NTC/view") 모델의 가중치를 다운로드
+1. [YOLOv3](https://drive.google.com/file/d/1D47msNOOiJKvPOXlnpyzdKA3k6E97NTC/view) 모델의 가중치를 다운로드
 
 다운받은 가중치는 `detector/yolo/data` 디렉토리를 만든 뒤, 저장
 
-2. [Halpe26 + ResNet50 + YOLOv3 + 256x192]("https://drive.google.com/file/d/1S-ROA28de-1zvLv-hVfPFJ5tFBYOSITb/view") 모델의 가중치를 다운로드
+2. [Halpe26 + ResNet50 + YOLOv3 + 256x192](https://drive.google.com/file/d/1S-ROA28de-1zvLv-hVfPFJ5tFBYOSITb/view) 모델의 가중치를 다운로드
 
 다운받은 가중치는 `pretrained_models` 디렉토리에 저장.
 
-3. [MotionBERT 3D Pose (H36M-SH, ft)]("https://onedrive.live.com/?authkey=%21ABOq3JHlmyCLz9k&id=A5438CD242871DF0%21170&cid=A5438CD242871DF0") 모델의 가중치를 다운로드
+3. [MotionBERT 3D Pose (H36M-SH, ft)](https://onedrive.live.com/?authkey=%21ABOq3JHlmyCLz9k&id=A5438CD242871DF0%21170&cid=A5438CD242871DF0) 모델의 가중치를 다운로드
 
 다운받은 가중치는 `MotionBERT/weights` 디렉토리를 생성 후, 이름을 `MB_ft_h36m.bin`으로 바꾼 뒤 저장
 
