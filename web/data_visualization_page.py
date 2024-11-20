@@ -185,7 +185,7 @@ async def page_ready(self, msg):
     script += "e[\"session_id\"] = \"" + str(session_id) + "\"; "
     script += "e[\"event_type\"] = \"" + "result_ready" + "\"; "
     script += """
-    const chunkSize = 1024 * 5;
+    const chunkSize = 1024 * 512;
 
     const readFileChunked = (file) => {
         return new Promise((resolve, reject) => {
@@ -197,7 +197,7 @@ async def page_ready(self, msg):
                 chunks.push(e.target.result);
                 offset += chunkSize;
                 const totalChunks = Math.ceil(file.size / chunkSize);
-                console.log(offset, Math.ceil(file.size / chunkSize));
+                
                 if (offset < file.size) {
                     readNextChunk();
                 } else {
@@ -226,8 +226,15 @@ async def page_ready(self, msg):
     try {
         const files = await Promise.all(filePromises);
         for (const file of files) {
-            for (const chunk of file.chunks) {
-                e.result = { name: file.name, chunk, totalChunks: file.totalChunks }
+            for (let i = 0; i < file.chunks.length; i++) {
+                const chunk = file.chunks[i];
+                e.result = { 
+                    name: file.name, 
+                    chunk: chunk, 
+                    totalChunks: file.totalChunks,
+                    chunkIndex: i
+                }
+                await new Promise(resolve => setTimeout(resolve, 1));
                 send_to_server(e, "page_event", false);
             }
         }
@@ -244,22 +251,34 @@ async def result_ready(self, msg):
         file_name = result.get("name")
         chunk_data = result.get("chunk")
         total_chunks = result.get("totalChunks")
-        if file_name and chunk_data:
-            if file_name not in self.file_chunks:
-                self.file_chunks[file_name] = []
-            self.file_chunks[file_name].append(chunk_data)
+        chunk_index = result.get("chunkIndex", 0)
 
-            # 파일이 완전히 수신되었는지 확인
-            if len(self.file_chunks[file_name]) == total_chunks:
-                data = ""
-                for chunk in self.file_chunks[file_name]:
-                    data += chunk
-                
-                self.file_list.append(json.loads(data))
-                self.add_file(self.file_list[-1])
-                del self.file_chunks[file_name]
+        print(total_chunks, chunk_index)
+        
+        if not all([file_name, chunk_data is not None, total_chunks]):
+            return
+            
+        if file_name not in self.file_chunks:
+            self.file_chunks[file_name] = [None] * total_chunks
+            
+        self.file_chunks[file_name][chunk_index] = chunk_data
+
+        if all(chunk is not None for chunk in self.file_chunks[file_name]):
+            data = ''.join(self.file_chunks[file_name])
+            
+            try:
+                parsed_data = json.loads(data)
+                self.file_list.append(parsed_data)
+                self.add_file(parsed_data)
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error: {e}")
+                print(f"Data length: {len(data)}")
+                print(f"First 100 chars: {data[:100]}")
+            
+            del self.file_chunks[file_name]
+            
     except Exception as e:
-        print(e)
+        print(f"Error in result_ready: {e}")
 
 def data_visualization_page():
     wp = jp.WebPage()
