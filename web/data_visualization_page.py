@@ -197,14 +197,26 @@ def result_view(node_dict: dict):
     rotation_slider.on("input", change_pose3d_figures)
 
 def file_list_view(node_dict: dict):
-    file_list_view_container = jp.Div(a=node_dict["plane"], id="file_list_view_container", style="overflow-x: scroll;", classes="w-full h-52 flex items-center border-box border border-green-400 p-5")
+    file_list_view_container = jp.Div(
+        a=node_dict["plane"], 
+        id="file_list_view_container", 
+        style="overflow-x: scroll;", 
+        classes="w-full h-52 flex items-center border-box border border-green-400 p-5"
+    )
+    node_dict["file_list_view_container"] = file_list_view_container
     
     def drag_over(self, msg):
         msg.prevent_default = True
     
     file_list_view_container.on("dragover", drag_over)
     def add_file(collected_datas):
-        item_container = jp.Div(a=file_list_view_container, style="height: fit-content; width: fit-content; white-space: nowrap;", classes="flex flex-col p-3 cursor-pointer justify-center items-center bg-gray-100 mr-3")
+        item_container = jp.Div(
+            a=file_list_view_container, 
+            style="height: fit-content; width: fit-content; white-space: nowrap;", 
+            classes="flex flex-col p-3 cursor-pointer justify-center items-center bg-gray-100 mr-3"
+        )
+        node_dict["file_list_view_item_container"] = item_container
+
         def item_click(self, msg):
             for component in file_list_view_container.components:
                 component.set_class("bg-gray-100")
@@ -354,7 +366,11 @@ def data_visualization_page():
     wp.on('page_ready', page_ready)
     wp.on('result_ready', result_ready)
 
-    plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex flex-col border-box justify-around p-3")
+    plane = jp.Div(
+        a=wp, 
+        id="plane", 
+        classes="h-screen w-screen flex flex-col border-box justify-around p-3"
+    )
     wp.node_dict["plane"] = plane
     
     result_view(node_dict=wp.node_dict)
