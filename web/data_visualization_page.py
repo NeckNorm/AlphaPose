@@ -1,12 +1,7 @@
 import justpy as jp
 
-import torch
-import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import base64
-import os
-import asyncio
 
 import json
 
@@ -44,43 +39,112 @@ def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0
         else:
             ax.plot(-xs, -zs, -ys, color=color_mid, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
 
-def result_view(container):
+def result_view(node_dict: dict):
     # 웹캠 이미지 표시할 컨테이너 설정
-    result_view_container = jp.Div(a=container, id="result_view_container", classes="flex border-box justify-evenly items-end bg-white")
+    result_view_container = jp.Div(
+        a           = node_dict["plane"], 
+        id          = "result_view_container", 
+        classes     = "flex border-box justify-evenly items-end bg-white"
+    )
+    node_dict["result_view_container"] = result_view_container
 
     # ======================= Image View =======================
-    img_view_container = jp.Div(a=result_view_container, id="img_view_container", classes="flex flex-col w-1/3 border-box justify-center items-center bg-white")
-    img_plane = jp.Img(a=img_view_container, id="webcam_img", classes="block w-full max-w-3xl", width="640", height="480")
+    img_view_container = jp.Div(
+        a           = result_view_container,
+        id          = "img_view_container",
+        classes     = "flex flex-col w-1/3 border-box justify-center items-center bg-white"
+    )
+    
+    img_plane = jp.Img(
+        a           = img_view_container,
+        id          = "webcam_img",
+        classes     = "block w-full max-w-3xl",
+        width       = "640",
+        height      = "480"
+    )
+    node_dict["img_plane"] = img_plane
 
-    frame_slider_info = jp.Span(a=img_view_container, id="frame_slider_info", text="Frame 0/0", classes="text-lg")
-    frame_slider = jp.Input(a=img_view_container, id="frame_slider", type="range", min="0", max="99", value="0", step="1", classes="w-full")
+    frame_slider_info = jp.Span(
+        a           = img_view_container,
+        id          = "frame_slider_info",
+        text        = "Frame 0/0",
+        classes     = "text-lg"
+    )
+    
+    frame_slider = jp.Input(
+        a           = img_view_container,
+        id          = "frame_slider",
+        type        = "range",
+        min         = "0",
+        max         = "99",
+        value       = "0",
+        step        = "1",
+        classes     = "w-full"
+    )
 
     # ======================= Pose 3D View =======================
-    pose3d_figures_view_container = jp.Div(a=result_view_container, id="pose3d_figures_view_container", classes="flex flex-col w-1/3 border-box justify-between items-center bg-white")
-    pose3d_figures = jp.Matplotlib(a=pose3d_figures_view_container, id="pose3d_figures", classes="w-full max-h-80 mb-10 flex justify-center items-center")
-
-    elivation_slider_info = jp.Span(a=pose3d_figures_view_container, text="Elevation 90/180deg", classes="text-lg mt-5")
-    elivation_slider = jp.Input(a=pose3d_figures_view_container, id="elivation_slider", type="range", min="0", max="179", value="90", step="0.01", classes="w-full")
+    pose3d_figures_view_container = jp.Div(
+        a           = result_view_container,
+        id          = "pose3d_figures_view_container",
+        classes     = "flex flex-col w-1/3 border-box justify-between items-center bg-white"
+    )
     
-    rotation_slider_info = jp.Span(a=pose3d_figures_view_container, text="Rotation 0/360deg", classes="text-lg mt-5")
-    rotation_slider = jp.Input(a=pose3d_figures_view_container, id="rotation_slider", type="range", min="0", max="359", value="180", step="0.01", classes="w-full")
+    pose3d_figures = jp.Matplotlib(
+        a           = pose3d_figures_view_container,
+        id          = "pose3d_figures",
+        classes     = "w-full max-h-80 mb-10 flex justify-center items-center"
+    )
+
+    elivation_slider_info = jp.Span(
+        a           = pose3d_figures_view_container,
+        text        = "Elevation 90/180deg",
+        classes     = "text-lg mt-5"
+    )
+    
+    elivation_slider = jp.Input(
+        a           = pose3d_figures_view_container,
+        id          = "elivation_slider",
+        type        = "range",
+        min         = "0",
+        max         = "179",
+        value       = "90",
+        step        = "0.01",
+        classes     = "w-full"
+    )
+    
+    rotation_slider_info = jp.Span(
+        a           = pose3d_figures_view_container,
+        text        = "Rotation 0/360deg",
+        classes     = "text-lg mt-5"
+    )
+    
+    rotation_slider = jp.Input(
+        a           = pose3d_figures_view_container,
+        id          = "rotation_slider",
+        type        = "range",
+        min         = "0",
+        max         = "359",
+        value       = "180",
+        step        = "0.01",
+        classes     = "w-full"
+    )
 
     def update_pose3d_figures():
         frame_idx = int(frame_slider.value)
-        current_data = container.a.current_data
+        current_data = node_dict["webpage"].current_data
         if current_data is None:
             return
         
-        frame = current_data["datas"][frame_idx]
-        motion_world = frame["pose3d_output"]
-        keypoints_scores = frame["keypoints_scores"]
+        frame               = current_data["datas"][frame_idx]
+        motion_world        = frame["pose3d_output"]
+        keypoints_scores    = frame["keypoints_scores"]
 
-        motion_world = np.array(motion_world)
-        keypoints_scores = np.array(keypoints_scores)
+        motion_world        = np.array(motion_world)
+        keypoints_scores    = np.array(keypoints_scores)
 
         # =================== 3D visualize ===================
-        elivation = float(elivation_slider.value)
-        rotation = float(rotation_slider.value)
+        elivation   = float(elivation_slider.value)
+        rotation    = float(rotation_slider.value)
 
         f = plt.figure(figsize=(4, 4))
         ax = f.add_subplot(111, projection='3d')
@@ -94,7 +158,7 @@ def result_view(container):
     def update_result():
         frame_idx = int(frame_slider.value)
 
-        current_data = container.a.current_data
+        current_data = node_dict["webpage"].current_data
         if current_data is None:
             return
         
@@ -105,14 +169,14 @@ def result_view(container):
         img_plane.src = f'data:image/jpeg;base64,{img}'
 
         update_pose3d_figures()
-        jp.run_task(container.a.update())
+        jp.run_task(node_dict["webpage"].update())
 
     def init_slider(frame_count):
         frame_slider.max = str(int(frame_count)-1)
         frame_slider.value = "0"
         frame_slider_info.text = f"Frame {0}/{frame_count}"
 
-        current_data = container.a.current_data
+        current_data = node_dict["webpage"].current_data
         if current_data is None:
             return
         
@@ -127,13 +191,13 @@ def result_view(container):
         rotation_slider_info.text = f"Rotation {rotation_slider.value}/360deg"
         update_pose3d_figures()
 
-    container.a.init_slider = init_slider
+    node_dict["webpage"].init_slider = init_slider
     frame_slider.on("input", change_frame)
     elivation_slider.on("input", change_pose3d_figures)
     rotation_slider.on("input", change_pose3d_figures)
 
-def file_list_view(container):
-    file_list_view_container = jp.Div(a=container, id="file_list_view_container", style="overflow-x: scroll;", classes="w-full h-52 flex items-center border-box border border-green-400 p-5")
+def file_list_view(node_dict: dict):
+    file_list_view_container = jp.Div(a=node_dict["plane"], id="file_list_view_container", style="overflow-x: scroll;", classes="w-full h-52 flex items-center border-box border border-green-400 p-5")
     
     def drag_over(self, msg):
         msg.prevent_default = True
@@ -147,14 +211,14 @@ def file_list_view(container):
             self.set_class("bg-green-100")
 
             try:
-                container.a.current_data = None
-                for file in container.a.file_list:
+                node_dict["webpage"].current_data = None
+                for file in node_dict["webpage"].file_list:
                     if file["hash"] == self.hash:
-                        container.a.current_data = file
+                        node_dict["webpage"].current_data = file
                         break
                 
                 frame_count = int(collected_datas["frame_count"])
-                container.a.init_slider(frame_count)
+                node_dict["webpage"].init_slider(frame_count)
             except Exception as e:
                 print(e)
 
@@ -171,19 +235,18 @@ def file_list_view(container):
         hash = collected_datas["hash"]
         item_container.hash = hash
         
-    container.a.add_file = add_file
+    node_dict["webpage"].add_file = add_file
 
 async def page_ready(self, msg):
     page_id = msg["page_id"]
     websocket_id = msg["websocket_id"]
     session_id = msg["session_id"]
-    event_type = msg["event_type"]
     
     script = "file_list_view_container.addEventListener(\"drop\", async (e) => {e.preventDefault();"
     script += "e[\"page_id\"] = " + str(page_id) + "; "
     script += "e[\"websocket_id\"] = " + str(websocket_id) + "; "
     script += "e[\"session_id\"] = \"" + str(session_id) + "\"; "
-    script += "e[\"event_type\"] = \"" + "result_ready" + "\"; "
+    script += "e[\"event_type\"] = \"" + "result_ready" + "\"; " # MUST be result_ready
     script += """
     const chunkSize = 1024 * 512;
 
@@ -284,14 +347,18 @@ def data_visualization_page():
     wp = jp.WebPage()
     wp.file_chunks = {}
     wp.file_list = []
+
+    wp.node_dict = dict()
+    wp.node_dict["webpage"] = wp
+
     wp.on('page_ready', page_ready)
     wp.on('result_ready', result_ready)
 
     plane = jp.Div(a=wp, id="plane", classes="h-screen w-screen flex flex-col border-box justify-around p-3")
+    wp.node_dict["plane"] = plane
     
-    result_view(plane)
-    file_list_view(plane)
-
+    result_view(node_dict=wp.node_dict)
+    file_list_view(node_dict=wp.node_dict)
 
     return wp
 
