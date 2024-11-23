@@ -198,10 +198,10 @@ def result_view(node_dict: dict):
 
 def file_list_view(node_dict: dict):
     file_list_view_container = jp.Div(
-        a=node_dict["plane"], 
-        id="file_list_view_container", 
-        style="overflow-x: scroll;", 
-        classes="w-full h-52 flex items-center border-box border border-green-400 p-5"
+        a           = node_dict["plane"], 
+        id          = "file_list_view_container", 
+        style       = "overflow-x: scroll;", 
+        classes     = "w-full h-52 flex items-center border-box border border-green-400 p-5"
     )
     node_dict["file_list_view_container"] = file_list_view_container
     
@@ -211,9 +211,9 @@ def file_list_view(node_dict: dict):
     file_list_view_container.on("dragover", drag_over)
     def add_file(collected_datas):
         item_container = jp.Div(
-            a=file_list_view_container, 
-            style="height: fit-content; width: fit-content; white-space: nowrap;", 
-            classes="flex flex-col p-3 cursor-pointer justify-center items-center bg-gray-100 mr-3"
+            a           = file_list_view_container, 
+            style       = "height: fit-content; width: fit-content; white-space: nowrap;", 
+            classes     = "flex flex-col p-3 cursor-pointer justify-center items-center bg-gray-100 mr-3"
         )
         node_dict["file_list_view_item_container"] = item_container
 
@@ -367,9 +367,9 @@ def data_visualization_page():
     wp.on('result_ready', result_ready)
 
     plane = jp.Div(
-        a=wp, 
-        id="plane", 
-        classes="h-screen w-screen flex flex-col border-box justify-around p-3"
+        a           = wp, 
+        id          = "plane", 
+        classes     = "h-screen w-screen flex flex-col border-box justify-around p-3"
     )
     wp.node_dict["plane"] = plane
     
