@@ -56,11 +56,11 @@ def pose3d_visualize(ax, motion, scores,elivation, angle, keypoints_threshold=0.
     joint_pairs_left = [[8, 11], [11, 12], [12, 13], [0, 4], [4, 5], [5, 6]]
     joint_pairs_right = [[8, 14], [14, 15], [15, 16], [0, 1], [1, 2], [2, 3]]
 
-    color_mid = "#00457E"
-    color_left = "#02315E"
-    color_right = "#2F70AF"
+    color_mid = "#fc0313"
+    color_left = "#02315E" 
+    color_right = "#19a303"
 
-    j3d = motion[:,:,0]
+    j3d = motion[:,:,-1]
     ax.set_xlim(-512, 0)
     ax.set_ylim(-256, 256)
     ax.set_zlim(-512, 0)
@@ -71,9 +71,12 @@ def pose3d_visualize(ax, motion, scores,elivation, angle, keypoints_threshold=0.
     plt.tick_params(left = False, right = False , labelleft = False ,
                     labelbottom = False, bottom = False)
     for i in range(len(joint_pairs)):
-        if scores[0][i] < keypoints_threshold:
-            continue
         limb = joint_pairs[i]
+
+        # 두 Keypoint 중 하나라도 threshold 미만이면 시각화 하지 않음
+        if (scores[0][limb[0]] < keypoints_threshold) or (scores[0][limb[1]] < keypoints_threshold):
+            continue
+
         xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
         if joint_pairs[i] in joint_pairs_left:
             ax.plot(-xs, -zs, -ys, color=color_left, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
@@ -125,13 +128,13 @@ def pose2d_to_pose3d(pose2d_outs, img_wh):
         
         keypoints_transformed = np.concatenate(wild_dataset.frames, axis=0)
 
-        keypoints_scores = keypoints_transformed[...,2]
+        keypoints_scores = keypoints_transformed[...,2] # (T, 17)
 
         keypoints_transformed = torch.FloatTensor(keypoints_transformed)
         keypoints_transformed = keypoints_transformed[None,...]
 
         with torch.no_grad():
-            pose3d_outp = pose3d_model(keypoints_transformed.to(DEVICE)).cpu()[0]
+            pose3d_outp = pose3d_model(keypoints_transformed.to(DEVICE)).cpu()[0] # (T, 17, 3)
 
         return pose3d_outp, keypoints_scores
 
@@ -153,6 +156,13 @@ async def update_webcam(node_dict: dict):
         if not ret:
             print("프레임을 가져올 수 없습니다.")
             break
+
+        # =================== Screen Update ===================
+        _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
+        img_jpeg = base64.b64encode(jpeg)
+        jpg_as_text = img_jpeg.decode('utf-8')
+
+        node_dict["webcam_img"].src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
         
         # =================== Image --> Pose 2D ===================
         pose2d_input = img2pose2d_input(frame)
@@ -161,6 +171,12 @@ async def update_webcam(node_dict: dict):
         pose2d_outs.append(pose2d_out)
 
         pose3d_batch = node_dict["webpage"].collected_data[-1]["batch_size"] if node_dict["webpage"].is_collection_on else 3
+        
+        if len(pose2d_outs) < pose3d_batch:
+            jp.run_task(node_dict["webpage"].update())
+            continue
+
+        # 데이터 수가 프레임 최대 길이를 초과하면 첫번째 데이터를 제외
         if len(pose2d_outs) > pose3d_batch:
             pose2d_outs = pose2d_outs[1:]
         
@@ -168,7 +184,7 @@ async def update_webcam(node_dict: dict):
         img_wh = pose2d_input[1].shape[:2][::-1]
         pose3d_out, keypoints_scores = pose2d_to_pose3d(pose2d_outs, img_wh)
 
-        motion = np.transpose(pose3d_out, (1,2,0))
+        motion = np.transpose(pose3d_out, (1,2,0)) # (17, 3, T)
         motion_world = pixel2world_vis_motion(motion, dim=3)
 
         # =================== 3D visualize ===================
@@ -190,14 +206,7 @@ async def update_webcam(node_dict: dict):
         plt.close(f)
 
         node_dict["pose3d_figures"].update()
-
-        # =================== Screen Update ===================
-        _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
-        img_jpeg = base64.b64encode(jpeg)
-        jpg_as_text = img_jpeg.decode('utf-8')
-
-        node_dict["webcam_img"].src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
-        
+ 
         # 페이지에 변경 사항 적용
         jp.run_task(node_dict["webpage"].update())
 
@@ -317,7 +326,7 @@ def setting_view(node_dict: dict):
         node_dict["setting_control_frame_input"].value = time_value * user_fps  if user_fps > 0 else 0
 
         node_dict["setting_container"].time_length = time_value
-        node_dict["setting_container"].frame_count = node_dict["setting_control_time_input"].value
+        node_dict["setting_container"].frame_count = int(node_dict["setting_control_frame_input"].value)
     
     setting_control_time = jp.Div(
         a           = setting_controller, 

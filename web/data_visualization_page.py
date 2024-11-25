@@ -13,11 +13,11 @@ def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0
     joint_pairs_left = [[8, 11], [11, 12], [12, 13], [0, 4], [4, 5], [5, 6]]
     joint_pairs_right = [[8, 14], [14, 15], [15, 16], [0, 1], [1, 2], [2, 3]]
 
-    color_mid = "#00457E"
-    color_left = "#02315E"
-    color_right = "#2F70AF"
+    color_mid = "#fc0313"
+    color_left = "#02315E" 
+    color_right = "#19a303"
 
-    j3d = motion[:,:,0]
+    j3d = motion
     ax.set_xlim(-512, 0)
     ax.set_ylim(-256, 256)
     ax.set_zlim(-512, 0)
@@ -28,9 +28,12 @@ def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0
     plt.tick_params(left = False, right = False , labelleft = False ,
                     labelbottom = False, bottom = False)
     for i in range(len(joint_pairs)):
-        if scores[0][i] < keypoints_threshold:
-            continue
         limb = joint_pairs[i]
+
+        # 두 Keypoint 중 하나라도 threshold 미만이면 시각화 하지 않음
+        if (scores[limb[0]] < keypoints_threshold) or (scores[limb[1]] < keypoints_threshold):
+            continue
+
         xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
         if joint_pairs[i] in joint_pairs_left:
             ax.plot(-xs, -zs, -ys, color=color_left, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
@@ -42,8 +45,8 @@ def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0
 def result_view(node_dict: dict):
     # 웹캠 이미지 표시할 컨테이너 설정
     result_view_container = jp.Div(
-        a           = node_dict["plane"], 
-        id          = "result_view_container", 
+        a           = node_dict["plane"],
+        id          = "result_view_container",
         classes     = "flex border-box justify-evenly items-end bg-white"
     )
     node_dict["result_view_container"] = result_view_container
@@ -139,8 +142,8 @@ def result_view(node_dict: dict):
         motion_world        = frame["pose3d_output"]
         keypoints_scores    = frame["keypoints_scores"]
 
-        motion_world        = np.array(motion_world)
-        keypoints_scores    = np.array(keypoints_scores)
+        motion_world        = np.array(motion_world) # (17, 3)
+        keypoints_scores    = np.array(keypoints_scores) # (17,)
 
         # =================== 3D visualize ===================
         elivation   = float(elivation_slider.value)
@@ -320,6 +323,43 @@ async def page_ready(self, msg):
     """
     jp.run_task(self.run_javascript(script, request_id="get_files"))
 
+def post_process_keypoints(parsed_data:dict):
+    frame_count = parsed_data["frame_count"]
+    datas = parsed_data["datas"]
+
+    processed_keypoints = [[] for _ in range(frame_count)]
+    processed_scores = [[] for _ in range(frame_count)]
+
+    for idx, data in enumerate(datas):
+        keypoints = data["pose3d_output"]
+        keypoints = np.array(keypoints) # (17, 3, T)
+
+        scores = data["keypoints_scores"]
+        scores = np.array(scores) # (T, 17)
+
+        clip_length = keypoints.shape[2]
+
+        valid_data_start = max(0, idx - clip_length + 1)
+        valid_data_end = idx + 1
+        valid_data_size = valid_data_end - valid_data_start
+
+        for valid_idx in range(valid_data_start, valid_data_end, 1):
+            data_idx = clip_length - valid_data_size + (valid_idx - valid_data_start)
+            processed_keypoints[valid_idx].append(keypoints[..., data_idx])
+            processed_scores[valid_idx].append(scores[data_idx])
+
+    for idx, (target_kp, target_score) in enumerate(zip(processed_keypoints, processed_scores)):
+        target_kp = np.stack(target_kp) # (len, 17, 3)
+        target_kp = np.mean(target_kp, axis=0) # (17, 3)
+
+        target_score = np.stack(target_score) # (17, 3)
+        target_score = np.mean(target_score, axis=0) # (17,)
+
+        parsed_data["datas"][idx]["pose3d_output"] = target_kp.tolist()
+        parsed_data["datas"][idx]["keypoints_scores"] = target_score.tolist()
+    
+    return parsed_data
+
 async def result_ready(self, msg):
     try:
         result = msg.result
@@ -343,12 +383,15 @@ async def result_ready(self, msg):
             
             try:
                 parsed_data = json.loads(data)
+                parsed_data = post_process_keypoints(parsed_data)
                 self.file_list.append(parsed_data)
                 self.add_file(parsed_data)
             except json.JSONDecodeError as e:
                 print(f"JSON decode error: {e}")
                 print(f"Data length: {len(data)}")
                 print(f"First 100 chars: {data[:100]}")
+            except Exception as e:
+                print(e)
             
             del self.file_chunks[file_name]
             

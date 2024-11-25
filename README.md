@@ -75,3 +75,12 @@ python main.py
 ![alt text](./readme_imgs/image-4.png)
 
 업로드된 데이터를 클릭하면 시각화 가능
+
+## 3D Keypoint 정보
+<img src="./readme_imgs/image-5.png" width="250" alt="3D Keypoint visualization" />
+
+- 10 : 머리 맨 위
+- 9 : 코
+- 8 : 턱
+- 11 : 왼쪽 어깨
+- 14 : 오른쪽 어깨
