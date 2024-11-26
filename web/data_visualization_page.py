@@ -128,7 +128,7 @@ def result_view(node_dict: dict):
         min         = "0",
         max         = "359",
         value       = "180",
-        step        = "0.01",
+        step        = "0.1",
         classes     = "w-full"
     )
 
@@ -323,43 +323,6 @@ async def page_ready(self, msg):
     """
     jp.run_task(self.run_javascript(script, request_id="get_files"))
 
-def post_process_keypoints(parsed_data:dict):
-    frame_count = parsed_data["frame_count"]
-    datas = parsed_data["datas"]
-
-    processed_keypoints = [[] for _ in range(frame_count)]
-    processed_scores = [[] for _ in range(frame_count)]
-
-    for idx, data in enumerate(datas):
-        keypoints = data["pose3d_output"]
-        keypoints = np.array(keypoints) # (17, 3, T)
-
-        scores = data["keypoints_scores"]
-        scores = np.array(scores) # (T, 17)
-
-        clip_length = keypoints.shape[2]
-
-        valid_data_start = max(0, idx - clip_length + 1)
-        valid_data_end = idx + 1
-        valid_data_size = valid_data_end - valid_data_start
-
-        for valid_idx in range(valid_data_start, valid_data_end, 1):
-            data_idx = clip_length - valid_data_size + (valid_idx - valid_data_start)
-            processed_keypoints[valid_idx].append(keypoints[..., data_idx])
-            processed_scores[valid_idx].append(scores[data_idx])
-
-    for idx, (target_kp, target_score) in enumerate(zip(processed_keypoints, processed_scores)):
-        target_kp = np.stack(target_kp) # (len, 17, 3)
-        target_kp = np.mean(target_kp, axis=0) # (17, 3)
-
-        target_score = np.stack(target_score) # (17, 3)
-        target_score = np.mean(target_score, axis=0) # (17,)
-
-        parsed_data["datas"][idx]["pose3d_output"] = target_kp.tolist()
-        parsed_data["datas"][idx]["keypoints_scores"] = target_score.tolist()
-    
-    return parsed_data
-
 async def result_ready(self, msg):
     try:
         result = msg.result
@@ -383,7 +346,6 @@ async def result_ready(self, msg):
             
             try:
                 parsed_data = json.loads(data)
-                parsed_data = post_process_keypoints(parsed_data)
                 self.file_list.append(parsed_data)
                 self.add_file(parsed_data)
             except json.JSONDecodeError as e:

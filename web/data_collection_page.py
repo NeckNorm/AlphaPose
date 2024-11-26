@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append("../")
 
-from custom_model_utils import DataWriter, get_pose2d_model, get_detection_model, get_pose3d_model, DetectionOpt
+from custom_model_utils import DataWriter, get_pose2d_model, get_detection_model, get_pose3d_model, DetectionOpt, get_pose2d_result
 from MotionBERT.lib.data.dataset_wild import WildDetDataset
 from MotionBERT.lib.utils.vismo import pixel2world_vis_motion
 
@@ -111,7 +111,7 @@ def det2pose2d(pose2d_input):
 
         # 2D pose 결과 이미지를 보고싶다면 주석을 해제
         # 이후 리턴 값을 랜더링
-        # return get_pose2d_result(orig_img, hp_outp)
+        return get_pose2d_result(orig_img, hp_outp), hp_outp
 
         return hp_outp
 
@@ -131,12 +131,37 @@ def pose2d_to_pose3d(pose2d_outs, img_wh):
         keypoints_scores = keypoints_transformed[...,2] # (T, 17)
 
         keypoints_transformed = torch.FloatTensor(keypoints_transformed)
-        keypoints_transformed = keypoints_transformed[None,...]
+        keypoints_transformed = keypoints_transformed[None,...] # (1, T, 17, 3)
 
         with torch.no_grad():
             pose3d_outp = pose3d_model(keypoints_transformed.to(DEVICE)).cpu()[0] # (T, 17, 3)
 
-        return pose3d_outp, keypoints_scores
+        return pose3d_outp, keypoints_scores, keypoints_transformed[0,...,:2]
+
+def adjust_head_pose(kps_3d, kps_2d):
+    """
+    kp_3d : (17, 3, T)
+    kp_2d : (T, 17, 2)
+    """
+    clip_len = kps_3d.shape[2]
+    for i in range(clip_len):
+        kp_3d = kps_3d[...,i]
+        kp_2d = kps_2d[i]
+
+        vector_head_2d = kp_2d[10] - kp_2d[8]
+        vector_head_2d = vector_head_2d / np.linalg.norm(vector_head_2d)
+
+        vector_head_3d = kp_3d[10] - kp_3d[8]
+        vector_head_3d = vector_head_3d / np.linalg.norm(vector_head_3d)
+
+        angle = np.arccos(np.dot(vector_head_2d, vector_head_3d[:2]))
+
+        rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)],[np.sin(angle), np.cos(angle)]])
+
+        adjusted_coords = (kp_3d[8:10] - kp_3d[10:11])[...,:2] @ rotation_matrix + kp_3d[10:11][...,:2]
+        kp_3d[8:10][...,:2] = adjusted_coords
+
+    return kps_3d
 
 async def update_webcam(node_dict: dict):
     # 웹캠 열기
@@ -156,6 +181,14 @@ async def update_webcam(node_dict: dict):
         if not ret:
             print("프레임을 가져올 수 없습니다.")
             break
+        
+        # =================== Image --> Pose 2D ===================
+        pose2d_input = img2pose2d_input(frame)
+        frame, pose2d_out = det2pose2d(pose2d_input)
+
+        pose2d_outs.append(pose2d_out)
+
+        pose3d_batch = node_dict["webpage"].collected_data[-1]["batch_size"] if node_dict["webpage"].is_collection_on else 3
 
         # =================== Screen Update ===================
         _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
@@ -163,14 +196,6 @@ async def update_webcam(node_dict: dict):
         jpg_as_text = img_jpeg.decode('utf-8')
 
         node_dict["webcam_img"].src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
-        
-        # =================== Image --> Pose 2D ===================
-        pose2d_input = img2pose2d_input(frame)
-        pose2d_out = det2pose2d(pose2d_input)
-
-        pose2d_outs.append(pose2d_out)
-
-        pose3d_batch = node_dict["webpage"].collected_data[-1]["batch_size"] if node_dict["webpage"].is_collection_on else 3
         
         if len(pose2d_outs) < pose3d_batch:
             jp.run_task(node_dict["webpage"].update())
@@ -182,10 +207,12 @@ async def update_webcam(node_dict: dict):
         
         # =================== Pose 2D --> Pose 3D ===================
         img_wh = pose2d_input[1].shape[:2][::-1]
-        pose3d_out, keypoints_scores = pose2d_to_pose3d(pose2d_outs, img_wh)
+        pose3d_out, keypoints_scores, keypoints = pose2d_to_pose3d(pose2d_outs, img_wh)
 
         motion = np.transpose(pose3d_out, (1,2,0)) # (17, 3, T)
         motion_world = pixel2world_vis_motion(motion, dim=3)
+
+        motion_world = adjust_head_pose(motion_world, keypoints)
 
         # =================== 3D visualize ===================
         f = plt.figure(figsize=(9, 4))
@@ -195,7 +222,7 @@ async def update_webcam(node_dict: dict):
         plt.title("TOP VIEW")
 
         ax = f.add_subplot(132, projection='3d')
-        pose3d_visualize(ax, motion_world, keypoints_scores, 40, -90)
+        pose3d_visualize(ax, motion_world, keypoints_scores, 0, -90)
         plt.title("FRONT VIEW")
 
         ax = f.add_subplot(133, projection='3d')
@@ -549,6 +576,44 @@ def setting_view(node_dict: dict):
     core_button_container.components[0].on("click", webcam_control)
     core_button_container.components[1].on("click", collection_control)
 
+def post_process_keypoints(parsed_data:dict):
+    frame_count = parsed_data["frame_count"]
+    datas = parsed_data["datas"]
+
+    processed_keypoints_3d = [[] for _ in range(frame_count)]
+    processed_scores = [[] for _ in range(frame_count)]
+
+    for idx, data in enumerate(datas):
+        keypoints_3d = data["pose3d_output"]
+        keypoints_3d = np.array(keypoints_3d) # (17, 3, T)
+
+        scores = data["keypoints_scores"]
+        scores = np.array(scores) # (T, 17)
+
+        clip_length = keypoints_3d.shape[2]
+
+        valid_data_start = max(0, idx - clip_length + 1)
+        valid_data_end = idx + 1
+        valid_data_size = valid_data_end - valid_data_start
+
+        for valid_idx in range(valid_data_start, valid_data_end, 1):
+            data_idx = clip_length - valid_data_size + (valid_idx - valid_data_start)
+
+            processed_keypoints_3d[valid_idx].append(keypoints_3d[..., data_idx])
+            processed_scores[valid_idx].append(scores[data_idx])
+
+    for idx, (target_kp_3d, target_score) in enumerate(zip(processed_keypoints_3d, processed_scores)):
+        target_kp_3d = np.stack(target_kp_3d) # (len, 17, 3)
+        target_kp_3d = np.mean(target_kp_3d, axis=0) # (17, 3)
+
+        target_score = np.stack(target_score) # (17, 3)
+        target_score = np.mean(target_score, axis=0) # (17,)
+
+        parsed_data["datas"][idx]["pose3d_output"] = target_kp_3d.tolist()
+        parsed_data["datas"][idx]["keypoints_scores"] = target_score.tolist()
+    
+    return parsed_data
+
 def download_item(node_dict: dict, collected_datas):
     """
     collection_box = {
@@ -587,6 +652,8 @@ def download_item(node_dict: dict, collected_datas):
         if data["hash"] == hash:
             selected_data = data
             break
+
+    selected_data = post_process_keypoints(selected_data)
     
     json_file = item_name + ".json"
     with open(json_file, "w") as f:
