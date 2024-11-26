@@ -188,7 +188,7 @@ async def update_webcam(node_dict: dict):
 
         pose2d_outs.append(pose2d_out)
 
-        pose3d_batch = node_dict["webpage"].collected_data[-1]["batch_size"] if node_dict["webpage"].is_collection_on else 3
+        pose3d_clip_length = node_dict["webpage"].collected_data[-1]["clip_length"] if node_dict["webpage"].is_collection_on else 3
 
         # =================== Screen Update ===================
         _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
@@ -197,12 +197,12 @@ async def update_webcam(node_dict: dict):
 
         node_dict["webcam_img"].src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
         
-        if len(pose2d_outs) < pose3d_batch:
+        if len(pose2d_outs) < pose3d_clip_length:
             jp.run_task(node_dict["webpage"].update())
             continue
 
         # 데이터 수가 프레임 최대 길이를 초과하면 첫번째 데이터를 제외
-        if len(pose2d_outs) > pose3d_batch:
+        if len(pose2d_outs) > pose3d_clip_length:
             pose2d_outs = pose2d_outs[1:]
         
         # =================== Pose 2D --> Pose 3D ===================
@@ -343,7 +343,7 @@ def setting_view(node_dict: dict):
     setting_container.height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
     setting_container.cam_fps = cam.get(cv2.CAP_PROP_FPS)
     setting_container.user_fps = setting_container.cam_fps
-    setting_container.batch = 3
+    setting_container.clip_length = 3
     cam.release()
 
     # =================== 생성 시간 ===================
@@ -403,30 +403,30 @@ def setting_view(node_dict: dict):
     node_dict["setting_control_frame_input"].on("input", frame_control)
     
     # =================== 3D pose 배치 크기 ===================
-    def batch_control(self, msg):
-        batch_value = int(self.value)
-        batch_value = batch_value if batch_value > 0 else 1
+    def clip_control(self, msg):
+        clip_value = int(self.value)
+        clip_value = clip_value if clip_value > 0 else 1
 
-        node_dict["setting_container"].batch = batch_value
+        node_dict["setting_container"].clip = clip_value
 
-    setting_control_batch = jp.Div(
+    setting_control_clip = jp.Div(
         a           = setting_controller, 
-        id          = "setting_control_batch", 
+        id          = "setting_control_clip", 
         classes     = "flex justify-around items-center"
     )
     jp.Span(
-        a           = setting_control_batch, 
-        text        = "3D pose 배치 크기", 
+        a           = setting_control_clip, 
+        text        = "3D pose 클립 크기", 
         classes     = "text-base"
     )
     jp.Input(
-        a           = setting_control_batch, 
-        id          = "setting_control_batch_input", 
-        placeholder = "배치 크기 입력", 
+        a           = setting_control_clip, 
+        id          = "setting_control_clip_input", 
+        placeholder = "클립 크기 입력", 
         classes     = "m-2 bg-gray-200 border-2 border-gray-200 rounded w-64 py-2 px-4 text-gray-700 focus:outline-none focus:bg-white focus:border-purple-500"
     )
-    node_dict["setting_control_batch_input"] = setting_control_batch.components[-1]
-    node_dict["setting_control_batch_input"].on("input", batch_control)
+    node_dict["setting_control_clip_input"] = setting_control_clip.components[-1]
+    node_dict["setting_control_clip_input"].on("input", clip_control)
 
     # =================== 화면 캡처 주기 ===================
     def capture_interval_control(self, msg):
@@ -529,7 +529,7 @@ def setting_view(node_dict: dict):
                 "img_width"     : node_dict["setting_container"].width,
                 "img_height"    : node_dict["setting_container"].height,
                 "frame_count"   : node_dict["setting_container"].frame_count,
-                "batch_size"    : node_dict["setting_container"].batch,
+                "clip_length"   : node_dict["setting_container"].clip_length,
                 "fps"           : node_dict["setting_container"].user_fps,
                 "time_length"   : node_dict["setting_container"].time_length,
                 "datas"         : []
@@ -622,7 +622,7 @@ def download_item(node_dict: dict, collected_datas):
         "img_width": self.a.a.width,
         "img_height": self.a.a.height,
         "frame_count": self.a.a.frame_count,
-        "batch_size": self.a.a.batch,
+        "clip_length": self.a.a.clip_length,
         "fps": self.a.a.user_fps,
         "time_length": self.a.a.time_length,
         "datas": []
@@ -639,8 +639,8 @@ def download_item(node_dict: dict, collected_datas):
     item_container  = jp.Div(a=node_dict["download_list_container"], classes="h-15 flex p-3 items-center bg-green-100 mb-3")
     date            = collected_datas["date"]
     frame_count     = int(collected_datas["frame_count"])
-    batch_size      = collected_datas["batch_size"]
-    item_name       = f"{date}_fc{frame_count}_bs{batch_size}"
+    clip_length     = collected_datas["clip_length"]
+    item_name       = f"{date}_fc{frame_count}_cl{clip_length}"
 
     jp.Span(a=item_container, text=item_name, classes="text-base mr-5")
     download_btn = jp.A(a=item_container, text="💾", classes="text-2xl cursor-pointer")
