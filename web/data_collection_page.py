@@ -233,6 +233,12 @@ async def update_webcam(node_dict: dict):
         motion_world = adjust_head_pose(motion_world, keypoints)
         motion_world = adjust_neck_depth(motion_world)
 
+        motion_world = motion_world.cpu().numpy()
+        for idx in range(1, motion_world.shape[2]):
+            motion_world[...,idx] = 0.1 * motion_world[...,idx-1] + 0.9 * motion_world[...,idx]
+
+        motion_world = torch.FloatTensor(motion_world)
+
         # =================== 3D visualize ===================
         f = plt.figure(figsize=(9, 4))
         
