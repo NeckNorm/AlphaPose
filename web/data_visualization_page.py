@@ -13,9 +13,9 @@ def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0
     joint_pairs_left = [[8, 11], [11, 12], [12, 13], [0, 4], [4, 5], [5, 6]]
     joint_pairs_right = [[8, 14], [14, 15], [15, 16], [0, 1], [1, 2], [2, 3]]
 
-    color_mid = "#fc0313"
-    color_left = "#02315E" 
-    color_right = "#19a303"
+    color_mid = "#fc0313" # Red
+    color_left = "#02315E" # Blue
+    color_right = "#19a303" # Green
 
     j3d = motion
     ax.set_xlim(-512, 0)
@@ -242,11 +242,11 @@ def file_list_view(node_dict: dict):
         date = collected_datas["date"]
         frame_count = int(collected_datas["frame_count"])
         fps = collected_datas["fps"]
-        batch_size = collected_datas["batch_size"]
+        clip_length = collected_datas["clip_length"]
         jp.Span(a=item_container, text=date, classes="text-base")
         jp.Span(a=item_container, text=f"Frame Count : {frame_count}", classes="text-base")
         jp.Span(a=item_container, text=f"FPS : {fps}", classes="text-base")
-        jp.Span(a=item_container, text=f"Batch Size : {batch_size}", classes="text-base")
+        jp.Span(a=item_container, text=f"Clip Length : {clip_length}", classes="text-base")
         hash = collected_datas["hash"]
         item_container.hash = hash
         

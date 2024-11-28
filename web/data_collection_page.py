@@ -56,9 +56,9 @@ def pose3d_visualize(ax, motion, scores,elivation, angle, keypoints_threshold=0.
     joint_pairs_left = [[8, 11], [11, 12], [12, 13], [0, 4], [4, 5], [5, 6]]
     joint_pairs_right = [[8, 14], [14, 15], [15, 16], [0, 1], [1, 2], [2, 3]]
 
-    color_mid = "#fc0313"
-    color_left = "#02315E" 
-    color_right = "#19a303"
+    color_mid = "#fc0313" # Red
+    color_left = "#02315E" # Blue
+    color_right = "#19a303" # Green
 
     j3d = motion[:,:,-1]
     ax.set_xlim(-512, 0)
@@ -163,6 +163,24 @@ def adjust_head_pose(kps_3d, kps_2d):
 
     return kps_3d
 
+def adjust_neck_depth(kps_3d):
+    kps_3d = kps_3d.cpu().numpy()
+    for i in range(kps_3d.shape[2]):
+        kp_3d = np.array(kps_3d[...,i])
+        line = kp_3d[11][[0,2]], kp_3d[14][[0,2]]
+        dx = line[1][0] - line[0][0]
+        dy = line[1][1] - line[0][1]
+        slope = dy / dx if dx != 0 else 0
+        line_func = lambda x: slope*(x - line[0][0]) + line[0][1]
+
+        diff = kp_3d[8][2] - line_func(kp_3d[8][0])
+        if diff > 0:
+            kp_3d[8:11,2] = kp_3d[8:11,2] - 2*diff
+        
+        kps_3d[...,i] = kp_3d
+
+    return torch.FloatTensor(kps_3d)
+
 async def update_webcam(node_dict: dict):
     # 웹캠 열기
     cam = cv2.VideoCapture(0)
@@ -213,6 +231,7 @@ async def update_webcam(node_dict: dict):
         motion_world = pixel2world_vis_motion(motion, dim=3)
 
         motion_world = adjust_head_pose(motion_world, keypoints)
+        motion_world = adjust_neck_depth(motion_world)
 
         # =================== 3D visualize ===================
         f = plt.figure(figsize=(9, 4))
@@ -407,7 +426,7 @@ def setting_view(node_dict: dict):
         clip_value = int(self.value)
         clip_value = clip_value if clip_value > 0 else 1
 
-        node_dict["setting_container"].clip = clip_value
+        node_dict["setting_container"].clip_length = clip_value
 
     setting_control_clip = jp.Div(
         a           = setting_controller, 
