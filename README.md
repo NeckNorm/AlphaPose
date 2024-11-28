@@ -87,6 +87,7 @@ python main.py
 3D Keypoint의 정보는 다음과 같음
 
 <img src="./readme_imgs/image-5.png" width="250" alt="3D Keypoint visualization" />
+
 시각화에 중점적으로 표시되는 keypoint는 다음과 같음
 - 10 : 머리 맨 위
 - 9 : 코
