@@ -171,11 +171,13 @@ def adjust_neck_depth(kps_3d):
         dx = line[1][0] - line[0][0]
         dy = line[1][1] - line[0][1]
         slope = dy / dx if dx != 0 else 0
-        line_func = lambda x: slope*(x - line[0][0]) + line[0][1]
 
-        diff = kp_3d[8][2] - line_func(kp_3d[8][0])
-        if diff > 0:
-            kp_3d[8:11,2] = kp_3d[8:11,2] - 2*diff
+        line_function = lambda x: slope * (x - line[0][0]) + line[0][1]
+
+        neck_diff = line_function(kp_3d[8][0]) - kp_3d[8][2]
+
+        if neck_diff < 0:
+            kp_3d[8:11,2] = kp_3d[8:11,2] + 2*neck_diff
         
         kps_3d[...,i] = kp_3d
 
@@ -231,7 +233,7 @@ async def update_webcam(node_dict: dict):
         motion_world = pixel2world_vis_motion(motion, dim=3)
 
         motion_world = adjust_head_pose(motion_world, keypoints)
-        motion_world = adjust_neck_depth(motion_world)
+        # motion_world = adjust_neck_depth(motion_world)
 
         motion_world = motion_world.cpu().numpy()
         for idx in range(1, motion_world.shape[2]):
@@ -243,7 +245,7 @@ async def update_webcam(node_dict: dict):
         f = plt.figure(figsize=(9, 4))
         
         ax = f.add_subplot(131, projection='3d')
-        pose3d_visualize(ax, motion_world, keypoints_scores, 80, 0)
+        pose3d_visualize(ax, motion_world, keypoints_scores, 90, 0)
         plt.title("TOP VIEW")
 
         ax = f.add_subplot(132, projection='3d')
@@ -252,7 +254,7 @@ async def update_webcam(node_dict: dict):
 
         ax = f.add_subplot(133, projection='3d')
         pose3d_visualize(ax, motion_world, keypoints_scores, 0, 0)
-        plt.title("LEFT SIDE VIEW")
+        plt.title("RIGHT SIDE VIEW")
 
         node_dict["pose3d_figures"].set_figure(f)
         plt.close(f)
