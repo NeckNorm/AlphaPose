@@ -8,39 +8,7 @@ import json
 import sys
 sys.path.append("../")
 
-def pose3d_visualize(ax, motion, scores, elivation, angle, keypoints_threshold=0.7):
-    joint_pairs = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], [0, 7], [7, 8], [8, 9], [8, 11], [8, 14], [9, 10], [11, 12], [12, 13], [14, 15], [15, 16]]
-    joint_pairs_left = [[8, 11], [11, 12], [12, 13], [0, 4], [4, 5], [5, 6]]
-    joint_pairs_right = [[8, 14], [14, 15], [15, 16], [0, 1], [1, 2], [2, 3]]
-
-    color_mid = "#fc0313" # Red
-    color_left = "#02315E" # Blue
-    color_right = "#19a303" # Green
-
-    j3d = motion
-    ax.set_xlim(-512, 0)
-    ax.set_ylim(-256, 256)
-    ax.set_zlim(-512, 0)
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.view_init(elev=elivation, azim=angle)
-    plt.tick_params(left = False, right = False , labelleft = False ,
-                    labelbottom = False, bottom = False)
-    for i in range(len(joint_pairs)):
-        limb = joint_pairs[i]
-
-        # 두 Keypoint 중 하나라도 threshold 미만이면 시각화 하지 않음
-        if (scores[limb[0]] < keypoints_threshold) or (scores[limb[1]] < keypoints_threshold):
-            continue
-
-        xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
-        if joint_pairs[i] in joint_pairs_left:
-            ax.plot(-xs, -zs, -ys, color=color_left, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
-        elif joint_pairs[i] in joint_pairs_right:
-            ax.plot(-xs, -zs, -ys, color=color_right, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
-        else:
-            ax.plot(-xs, -zs, -ys, color=color_mid, lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
+from utils import pose3d_visualize
 
 def result_view(node_dict: dict):
     # 웹캠 이미지 표시할 컨테이너 설정
