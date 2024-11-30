@@ -3,6 +3,12 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy
 import numpy as np
+import justpy as jp
+import cv2
+import base64
+
+from typing import Union
+
 
 def pose3d_visualize(
     ax                  : matplotlib.axes.Axes, 
@@ -78,3 +84,14 @@ def pose3d_visualize(
             plot_joint_pair(color=color_right)
         else:
             plot_joint_pair(color=color_mid)
+
+def screen_update(screen: jp.Div, image: Union[str, cv2.typing.MatLike]):
+    if isinstance(image, cv2.typing.MatLike):
+        _, jpeg = cv2.imencode('.jpg', image)
+        img_jpeg = base64.b64encode(jpeg)
+        img_as_text = img_jpeg.decode('utf-8')
+        screen.src = f'data:image/jpeg;base64,{img_as_text}'
+    elif isinstance(image, str):
+        screen.src = image
+    else:
+        raise ValueError("Invalid image type")

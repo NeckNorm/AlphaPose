@@ -21,7 +21,7 @@ sys.path.append("../")
 from custom_model_utils import DataWriter, get_pose2d_model, get_detection_model, get_pose3d_model, DetectionOpt, get_pose2d_result
 from MotionBERT.lib.data.dataset_wild import WildDetDataset
 from MotionBERT.lib.utils.vismo import pixel2world_vis_motion
-from utils import pose3d_visualize
+from utils import pose3d_visualize, screen_update
 
 # CONSTANTS
 DEVICE = "mps"
@@ -178,11 +178,7 @@ async def update_webcam(node_dict: dict):
         pose3d_clip_length = node_dict["webpage"].collected_data[-1]["clip_length"] if node_dict["webpage"].is_collection_on else 3
 
         # =================== Screen Update ===================
-        _, jpeg = cv2.imencode('.jpg', frame) # 이미지를 JPEG로 인코딩 후 base64로 변환
-        img_jpeg = base64.b64encode(jpeg)
-        jpg_as_text = img_jpeg.decode('utf-8')
-
-        node_dict["webcam_img"].src = f'data:image/jpeg;base64,{jpg_as_text}' # Data URI 형식으로 웹캠 이미지 설정
+        screen_update(screen=node_dict["webcam_img"], image=frame)
         
         if len(pose2d_outs) < pose3d_clip_length:
             jp.run_task(node_dict["webpage"].update())

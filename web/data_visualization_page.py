@@ -8,7 +8,7 @@ import json
 import sys
 sys.path.append("../")
 
-from utils import pose3d_visualize
+from utils import pose3d_visualize, screen_update
 
 def result_view(node_dict: dict):
     # 웹캠 이미지 표시할 컨테이너 설정
