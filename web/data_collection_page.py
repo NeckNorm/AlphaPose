@@ -18,137 +18,15 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append("../")
 
-from custom_model_utils import DataWriter, get_pose2d_model, get_detection_model, get_pose3d_model, DetectionOpt, get_pose2d_result
 from MotionBERT.lib.data.dataset_wild import WildDetDataset
 from MotionBERT.lib.utils.vismo import pixel2world_vis_motion
 from utils import pose3d_visualize, screen_update
+from unified_pose_model import UnifiedPoseModel
+from keypoint_adjust_utils import adjust_head_pose, adjust_neck_depth
 
 # CONSTANTS
 DEVICE = "mps"
-
-def load_models():
-    pose2d_model_config, pose2d_model = get_pose2d_model(
-        pose2d_model_config_path="configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml",
-        pose2d_checkpoint_path="pretrained_models/halpe26_fast_res50_256x192.pth",
-        device=DEVICE,
-        root_path="../"
-    )
-
-    detection_model = get_detection_model(
-        device=DEVICE, 
-        pose2d_model_config=pose2d_model_config
-    )
-
-    pose3d_model = get_pose3d_model(
-        pose3d_config_path="../MotionBERT/configs/pose3d/MB_ft_h36m.yaml",
-        pose3d_weight_path="../MotionBERT/weights/MB_ft_h36m.bin",
-        device=DEVICE
-    )
-
-    pose2d_estimator = DataWriter(
-        pose2d_model_config, 
-        DetectionOpt(DEVICE)
-    )
-
-    return pose2d_model, detection_model, pose3d_model, pose2d_estimator
-
-# GLBAL VARIABLES
-pose2d_model, detection_model, pose3d_model, pose2d_estimator = load_models()
-
-def img2pose2d_input(img):
-    img_h, img_w = img.shape[:2]
-    # inps, orig_img, boxes, scores, ids, cropped_boxes
-    detection_outp = detection_model.process(img).read()
-
-    (inps, orig_img, boxes, scores, ids, cropped_boxes) = detection_outp
-    pose2d_input = (inps[0:1], orig_img, boxes[0:1], scores[0:1], ids[0:1], cropped_boxes[0:1])
-
-    # Bounding box를 보고싶을 경우 주석 해제
-    # l,t,r,b = np.array(boxes[0], np.int32)
-    # cv2.rectangle(img, (l,t), (r,b), (0,0,255), 3)
-
-    return pose2d_input
-
-def det2pose2d(pose2d_input):
-    with torch.no_grad():
-        (inps, orig_img, boxes, scores, ids, cropped_boxes) = pose2d_input
-        hm = pose2d_model(inps.to("mps")).cpu()
-        pose2d_estimator.save(boxes, scores, ids, hm, cropped_boxes, orig_img)
-        hp_outp = pose2d_estimator.start()
-
-        # 2D pose 결과 이미지를 보고싶다면 주석을 해제
-        # 이후 리턴 값을 랜더링
-        return get_pose2d_result(orig_img, hp_outp), hp_outp
-
-        return hp_outp
-
-def pose2d_to_pose3d(pose2d_outs, img_wh):
-        keypoints = [torch.concat([pose2d_out["result"][0]['keypoints'], pose2d_out["result"][0]['kp_score']], dim=-1) for pose2d_out in pose2d_outs]
-        keypoints = torch.stack(keypoints, dim=0)
-
-        wild_dataset = WildDetDataset(
-            clip_len=keypoints.shape[0],
-            image_size=img_wh,
-        )
-        for keypoint in keypoints:
-            wild_dataset.add_data(keypoint[None,...])
-        
-        keypoints_transformed = np.concatenate(wild_dataset.frames, axis=0)
-
-        keypoints_scores = keypoints_transformed[...,2] # (T, 17)
-
-        keypoints_transformed = torch.FloatTensor(keypoints_transformed)
-        keypoints_transformed = keypoints_transformed[None,...] # (1, T, 17, 3)
-
-        with torch.no_grad():
-            pose3d_outp = pose3d_model(keypoints_transformed.to(DEVICE)).cpu()[0] # (T, 17, 3)
-
-        return pose3d_outp, keypoints_scores, keypoints_transformed[0,...,:2]
-
-def adjust_head_pose(kps_3d, kps_2d):
-    """
-    kp_3d : (17, 3, T)
-    kp_2d : (T, 17, 2)
-    """
-    clip_len = kps_3d.shape[2]
-    for i in range(clip_len):
-        kp_3d = kps_3d[...,i]
-        kp_2d = kps_2d[i]
-
-        vector_head_2d = kp_2d[10] - kp_2d[8]
-        vector_head_2d = vector_head_2d / np.linalg.norm(vector_head_2d)
-
-        vector_head_3d = kp_3d[10] - kp_3d[8]
-        vector_head_3d = vector_head_3d / np.linalg.norm(vector_head_3d)
-
-        angle = np.arccos(np.dot(vector_head_2d, vector_head_3d[:2]))
-
-        rotation_matrix = np.array([[np.cos(angle), -np.sin(angle)],[np.sin(angle), np.cos(angle)]])
-
-        adjusted_coords = (kp_3d[8:10] - kp_3d[10:11])[...,:2] @ rotation_matrix + kp_3d[10:11][...,:2]
-        kp_3d[8:10][...,:2] = adjusted_coords
-
-    return kps_3d
-
-def adjust_neck_depth(kps_3d):
-    kps_3d = kps_3d.cpu().numpy()
-    for i in range(kps_3d.shape[2]):
-        kp_3d = np.array(kps_3d[...,i])
-        line = kp_3d[11][[0,2]], kp_3d[14][[0,2]]
-        dx = line[1][0] - line[0][0]
-        dy = line[1][1] - line[0][1]
-        slope = dy / dx if dx != 0 else 0
-
-        line_function = lambda x: slope * (x - line[0][0]) + line[0][1]
-
-        neck_diff = line_function(kp_3d[8][0]) - kp_3d[8][2]
-
-        if neck_diff < 0:
-            kp_3d[8:11,2] = kp_3d[8:11,2] + 2*neck_diff
-        
-        kps_3d[...,i] = kp_3d
-
-    return torch.FloatTensor(kps_3d)
+unified_pose_model = UnifiedPoseModel(device=DEVICE)
 
 async def update_webcam(node_dict: dict):
     # 웹캠 열기
@@ -160,8 +38,6 @@ async def update_webcam(node_dict: dict):
     cam_fps = cam.get(cv2.CAP_PROP_FPS)
     current_fps = cam_fps
 
-    pose2d_outs = []
-
     while node_dict["webpage"].is_webcam_on:
         ret, frame = cam.read()
 
@@ -169,35 +45,24 @@ async def update_webcam(node_dict: dict):
             print("프레임을 가져올 수 없습니다.")
             break
         
-        # =================== Image --> Pose 2D ===================
-        pose2d_input = img2pose2d_input(frame)
-        frame, pose2d_out = det2pose2d(pose2d_input)
-
-        pose2d_outs.append(pose2d_out)
-
         pose3d_clip_length = node_dict["webpage"].collected_data[-1]["clip_length"] if node_dict["webpage"].is_collection_on else 3
 
+        pose3d_out, keypoints_scores, keypoints_2d, input_image = unified_pose_model(frame, target_clip_length=pose3d_clip_length, draw_2d_output=True)
+
         # =================== Screen Update ===================
-        screen_update(screen=node_dict["webcam_img"], image=frame)
+        img_jpeg = screen_update(screen=node_dict["webcam_img"], image=input_image)
         
-        if len(pose2d_outs) < pose3d_clip_length:
+        if pose3d_out is None:
             jp.run_task(node_dict["webpage"].update())
             continue
-
-        # 데이터 수가 프레임 최대 길이를 초과하면 첫번째 데이터를 제외
-        if len(pose2d_outs) > pose3d_clip_length:
-            pose2d_outs = pose2d_outs[1:]
-        
-        # =================== Pose 2D --> Pose 3D ===================
-        img_wh = pose2d_input[1].shape[:2][::-1]
-        pose3d_out, keypoints_scores, keypoints = pose2d_to_pose3d(pose2d_outs, img_wh)
 
         motion = np.transpose(pose3d_out, (1,2,0)) # (17, 3, T)
         motion_world = pixel2world_vis_motion(motion, dim=3)
 
-        motion_world = adjust_head_pose(motion_world, keypoints)
+        motion_world = adjust_head_pose(motion_world, keypoints_2d)
         motion_world = adjust_neck_depth(motion_world)
 
+        # EMA in clip
         motion_world = motion_world.cpu().numpy()
         for idx in range(1, motion_world.shape[2]):
             motion_world[...,idx] = 0.1 * motion_world[...,idx-1] + 0.9 * motion_world[...,idx]
@@ -231,7 +96,7 @@ async def update_webcam(node_dict: dict):
         if node_dict["webpage"].is_collection_on:
             collected_data = {
                 "index"             : len(node_dict["webpage"].collected_data[-1]["datas"]),
-                "img_jpeg"          : jpg_as_text,
+                "img_jpeg"          : img_jpeg,
                 "pose3d_output"     : motion_world.cpu().numpy().tolist(),
                 "keypoints_scores"  : keypoints_scores.tolist()
             }
@@ -243,6 +108,7 @@ async def update_webcam(node_dict: dict):
             if progress_percentage == 1:
                 node_dict["webpage"].add_collected_item(node_dict["webpage"].collected_data[-1])
                 node_dict["webpage"].collecting_off()
+                unified_pose_model.clear_clip()
         
         # N초 대기
         current_fps = node_dict["webpage"].collected_data[-1]["fps"] if node_dict["webpage"].is_collection_on else current_fps

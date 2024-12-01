@@ -136,8 +136,7 @@ def result_view(node_dict: dict):
         frame = current_data["datas"][frame_idx]
 
         # =================== Image visualize ===================
-        img = frame["img_jpeg"]
-        img_plane.src = f'data:image/jpeg;base64,{img}'
+        _ = screen_update(screen=img_plane, image=frame["img_jpeg"])
 
         update_pose3d_figures()
         jp.run_task(node_dict["webpage"].update())

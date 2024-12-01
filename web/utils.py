@@ -9,7 +9,6 @@ import base64
 
 from typing import Union
 
-
 def pose3d_visualize(
     ax                  : matplotlib.axes.Axes, 
     motion              : numpy.ndarray, 
@@ -91,7 +90,11 @@ def screen_update(screen: jp.Div, image: Union[str, cv2.typing.MatLike]):
         img_jpeg = base64.b64encode(jpeg)
         img_as_text = img_jpeg.decode('utf-8')
         screen.src = f'data:image/jpeg;base64,{img_as_text}'
+
+        return img_as_text
     elif isinstance(image, str):
-        screen.src = image
+        screen.src = f"data:image/jpeg;base64,{image}"
+
+        return image
     else:
         raise ValueError("Invalid image type")
