@@ -22,7 +22,7 @@ from MotionBERT.lib.data.dataset_wild import WildDetDataset
 from MotionBERT.lib.utils.vismo import pixel2world_vis_motion
 from utils import pose3d_visualize, screen_update
 from unified_pose_model import UnifiedPoseModel
-from keypoint_adjust_utils import adjust_head_pose, adjust_neck_depth
+from keypoint_adjust_utils import adjust_head_pose, adjust_neck_pose
 
 # CONSTANTS
 DEVICE = "mps"
@@ -60,7 +60,7 @@ async def update_webcam(node_dict: dict):
         motion_world = pixel2world_vis_motion(motion, dim=3)
 
         motion_world = adjust_head_pose(motion_world, keypoints_2d)
-        motion_world = adjust_neck_depth(motion_world)
+        motion_world = adjust_neck_pose(motion_world)
 
         # EMA in clip
         motion_world = motion_world.cpu().numpy()
@@ -82,7 +82,7 @@ async def update_webcam(node_dict: dict):
 
         ax = f.add_subplot(133, projection='3d')
         pose3d_visualize(ax, motion_world[..., -1], keypoints_scores[-1], 0, 0)
-        plt.title("RIGHT SIDE VIEW")
+        plt.title("LEFT SIDE VIEW")
 
         node_dict["pose3d_figures"].set_figure(f)
         plt.close(f)
@@ -461,8 +461,8 @@ def post_process_keypoints(parsed_data:dict):
     for idx, (target_kp_3d, target_score) in enumerate(zip(processed_keypoints_3d, processed_scores)):
         target_kp_3d = np.stack(target_kp_3d) # (len, 17, 3)
         target_kp_3d = np.mean(target_kp_3d, axis=0) # (17, 3)
-
-        target_score = np.stack(target_score) # (17, 3)
+        
+        target_score = np.stack(target_score) # (len, 17)
         target_score = np.mean(target_score, axis=0) # (17,)
 
         parsed_data["datas"][idx]["pose3d_output"] = target_kp_3d.tolist()
