@@ -28,6 +28,60 @@ from keypoint_adjust_utils import adjust_head_pose, adjust_neck_pose
 DEVICE = "mps"
 unified_pose_model = UnifiedPoseModel(device=DEVICE)
 
+prev_neck_angle = None
+
+def calculate_head_neck_angle(motion_world, prev_angle=None, alpha=0.9):
+    """
+    머리(10)와 목(8)의 수직축 기준 각도 계산
+    Keypoints:
+    10: 머리 맨 위(head top)
+    9: 코(nose)
+    8: 목(neck)
+    
+    좌표계:
+    x: 등(-)에서 배(+) 방향
+    y: 오른쪽(-)에서 왼쪽(+) 방향
+    z: 발(-)에서 머리(+) 방향
+    """
+    # motion_world shape: (17, 3, 1)
+    motino_world_copy = np.array(motion_world).copy()
+    nose = motino_world_copy[9, :, -1]   # (3,)
+    neck = motino_world_copy[8, :, -1]  # (3,) - x,y,z 좌표
+    
+    # 코-목 벡터
+    nose_neck_vector = nose[1:3] - neck[1:3]
+    
+    # 수직 방향 단위 벡터 (y축 방향)
+    vertical_vector = np.array([-1, 0]) # 아래에서 위쪽 방쪽
+    
+    # 두 벡터의 내적
+    dot_product = np.dot(nose_neck_vector, vertical_vector)
+
+    # 두 벡터의 크기
+    nose_neck_magnitude = np.linalg.norm(nose_neck_vector)
+    vertical_magnitude = np.linalg.norm(vertical_vector)
+    
+    # 코사인 각도 계산
+    cos_angle = dot_product / (nose_neck_magnitude * vertical_magnitude)
+    current_angle = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+
+    # 각도 정규화 (25도 → 45도, 4도 → 0도로 매핑)
+    # y = mx + b 형태의 선형 변환 사용
+    m = 45 / (25 - 4)  # 기울기
+    b = -4 * m  # y절편
+    current_angle = m * current_angle + b
+    
+    # 0도 미만은 0도로, 45도 초과는 45도로 클리핑
+    current_angle = np.clip(current_angle, 0, 45)
+    
+    # EMA 적용
+    if prev_angle is not None:
+        print(f"prev_angle: {prev_angle}, current_angle: {current_angle}")
+        smoothed_angle = alpha * prev_angle + (1 - alpha) * current_angle
+        return smoothed_angle
+    
+    return current_angle
+
 async def update_webcam(node_dict: dict):
     # 웹캠 열기
     cam = cv2.VideoCapture(0)
@@ -37,6 +91,7 @@ async def update_webcam(node_dict: dict):
     
     cam_fps = cam.get(cv2.CAP_PROP_FPS)
     current_fps = cam_fps
+    prev_neck_angle = None
 
     while node_dict["webpage"].is_webcam_on:
         ret, frame = cam.read()
@@ -45,7 +100,7 @@ async def update_webcam(node_dict: dict):
             print("프레임을 가져올 수 없습니다.")
             break
         
-        pose3d_clip_length = node_dict["webpage"].collected_data[-1]["clip_length"] if node_dict["webpage"].is_collection_on else 3
+        pose3d_clip_length = node_dict["webpage"].collected_data[-1]["clip_length"] if node_dict["webpage"].is_collection_on else 5
 
         pose3d_out, keypoints_scores, keypoints_2d, input_image = unified_pose_model(frame, target_clip_length=pose3d_clip_length, draw_2d_output=True)
 
@@ -62,12 +117,22 @@ async def update_webcam(node_dict: dict):
         motion_world = adjust_head_pose(motion_world, keypoints_2d)
         motion_world = adjust_neck_pose(motion_world)
 
-        # EMA in clip
-        motion_world = motion_world.cpu().numpy()
-        for idx in range(1, motion_world.shape[2]):
-            motion_world[...,idx] = 0.1 * motion_world[...,idx-1] + 0.9 * motion_world[...,idx]
+        # # EMA in clip
+        # motion_world = motion_world.cpu().numpy()
+        # for idx in range(1, motion_world.shape[2]):
+        #     motion_world[...,idx] = 0.9 * motion_world[...,idx-1] + 0.1 * motion_world[...,idx]
 
         motion_world = torch.FloatTensor(motion_world)
+
+        # 각도 계산 추가
+        neck_angle = calculate_head_neck_angle(motion_world, prev_neck_angle)
+        prev_neck_angle = neck_angle  # 다음 프레임을 위해 현재 각도 저장
+        
+        # 첫 프레임에서만 출력
+        print(f"\n=== 자세 정보 ===")
+        print(f"머리-목 각도: {neck_angle:.1f}°")
+        print("=====================================")
+
 
         # =================== 3D visualize ===================
         f = plt.figure(figsize=(9, 4))
@@ -199,7 +264,7 @@ def setting_view(node_dict: dict):
     setting_container.height = int(cam.get(cv2.CAP_PROP_FRAME_HEIGHT))
     setting_container.cam_fps = cam.get(cv2.CAP_PROP_FPS)
     setting_container.user_fps = setting_container.cam_fps
-    setting_container.clip_length = 3
+    setting_container.clip_length = 5
     cam.release()
 
     # =================== 생성 시간 ===================
